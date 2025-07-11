@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "460706168496",
+    "project_id": "samypay",
+    "storage_bucket": "samypay.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:460706168496:android:021da66b992cef1fecc575",
+        "android_client_info": {
+          "package_name": "com.samypay.recharger"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpqNo-ZVGqVxhyZRCXpVJJYG05dSfuhTY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

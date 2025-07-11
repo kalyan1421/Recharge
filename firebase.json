@@ -1,0 +1,37 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "samypay-recharger",
+          "appId": "1:460706168496:android:021da66b992cef1fecc575",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "samypay-recharger",
+          "appId": "1:460706168496:ios:051652735882a070ecc575",
+          "uploadDebugSymbols": true,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "samypay-recharger",
+          "configurations": {
+            "android": "1:460706168496:android:021da66b992cef1fecc575",
+            "ios": "1:460706168496:ios:051652735882a070ecc575",
+            "web": "1:460706168496:web:61d4147b98318d90ecc575"
+          }
+        }
+      }
+    }
+  },
+  "emulators": {
+    "singleProjectMode": true
+  }
+}
