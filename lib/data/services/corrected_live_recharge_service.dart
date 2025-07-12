@@ -4,14 +4,13 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:crypto/crypto.dart';
 import '../../core/constants/api_constants.dart';
 import 'recharge_service.dart';
 
-class LiveRechargeService {
-  static final LiveRechargeService _instance = LiveRechargeService._internal();
-  factory LiveRechargeService() => _instance;
-  LiveRechargeService._internal();
+class CorrectedLiveRechargeService {
+  static final CorrectedLiveRechargeService _instance = CorrectedLiveRechargeService._internal();
+  factory CorrectedLiveRechargeService() => _instance;
+  CorrectedLiveRechargeService._internal();
 
   final Logger _logger = Logger();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -423,5 +422,4 @@ class LiveRechargeService {
     }
     return mobileNumber;
   }
-} 
 } 

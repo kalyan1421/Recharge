@@ -59,29 +59,22 @@ class PlanApiService {
       final cleanNumber = _cleanMobileNumber(mobileNumber);
       _logger.i('Fetching operator details for: ${_maskMobileNumber(cleanNumber)}');
       
-      // Try PlanAPI.in endpoint first
+      // Try API key format first
       try {
-        final uri = Uri.parse(APIConstants.operatorDetectionUrl)
-            .replace(queryParameters: {
-          'userid': APIConstants.apiUserId,
-          'password': APIConstants.apiPassword,
-          'format': 'json',
-          'mobile': cleanNumber,
-        });
-        
-        _logger.d('Testing PlanAPI.in URL: $uri');
-        
+        _logger.d('Trying API key format for operator detection...');
         final response = await http.get(
-          uri,
+          Uri.parse(APIConstants.operatorDetectionUrl).replace(queryParameters: {
+            'apikey': APIConstants.apiToken,
+            'mobileno': cleanNumber,
+          }),
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'Authorization': 'Bearer ${APIConstants.apiToken}',
           },
         ).timeout(_timeout);
         
-        _logger.d('PlanAPI Response Status: ${response.statusCode}');
-        _logger.d('PlanAPI Response Body: ${response.body}');
+        _logger.d('API key Operator Response Status: ${response.statusCode}');
+        _logger.d('API key Operator Response Body: ${response.body}');
         
         if (response.statusCode == 200) {
           final responseText = response.body.toLowerCase();
@@ -89,15 +82,51 @@ class PlanApiService {
               !responseText.contains('error') && responseText.contains('{')) {
             final Map<String, dynamic> apiResponse = json.decode(response.body);
             
-            if (apiResponse['ERROR'] == '0' && apiResponse['STATUS'] == '1') {
+            if (apiResponse['status'] == 'success' || apiResponse['Status'] == '1' || apiResponse['ERROR'] == '0') {
               final operatorInfo = _createOperatorInfoFromResponse(apiResponse, cleanNumber);
-              _logger.i('✅ Operator detected via PlanAPI: ${operatorInfo.operator}');
+              _logger.i('✅ Operator detected via PlanAPI (API key): ${operatorInfo.operator}');
               return operatorInfo;
             }
           }
         }
       } catch (e) {
-        _logger.w('PlanAPI.in is not accessible: $e');
+        _logger.w('API key format for operator detection failed: $e');
+      }
+
+      // Try userid/password format
+      try {
+        _logger.d('Trying userid/password format for operator detection...');
+        final response = await http.get(
+          Uri.parse(APIConstants.operatorDetectionUrl).replace(queryParameters: {
+            'userid': APIConstants.apiUserId,
+            'password': APIConstants.apiPassword,
+            'format': 'json',
+            'mobile': cleanNumber,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ).timeout(_timeout);
+        
+        _logger.d('Userid/password Operator Response Status: ${response.statusCode}');
+        _logger.d('Userid/password Operator Response Body: ${response.body}');
+        
+        if (response.statusCode == 200) {
+          final responseText = response.body.toLowerCase();
+          if (!responseText.contains('404') && !responseText.contains('not found') && 
+              !responseText.contains('error') && responseText.contains('{')) {
+            final Map<String, dynamic> apiResponse = json.decode(response.body);
+            
+            if (apiResponse['status'] == 'success' || apiResponse['Status'] == '1' || apiResponse['ERROR'] == '0') {
+              final operatorInfo = _createOperatorInfoFromResponse(apiResponse, cleanNumber);
+              _logger.i('✅ Operator detected via PlanAPI (userid/password): ${operatorInfo.operator}');
+              return operatorInfo;
+            }
+          }
+        }
+      } catch (e) {
+        _logger.w('Userid/password format for operator detection failed: $e');
       }
       
       // Fall back to intelligent detection with clear API status
@@ -211,30 +240,23 @@ class PlanApiService {
     try {
       _logger.i('Fetching mobile plans for operator: $operatorCode, circle: $circleCode');
       
-      // Try PlanAPI.in endpoint first
+      // Try API key format first
       try {
-        final uri = Uri.parse(APIConstants.mobilePlansUrl)
-            .replace(queryParameters: {
-          'userid': APIConstants.apiUserId,
-          'password': APIConstants.apiPassword,
-          'format': 'json',
-          'operator': operatorCode,
-          'circle': circleCode,
-        });
-        
-        _logger.d('Testing PlanAPI.in Plans URL: $uri');
-        
+        _logger.d('Trying API key format for plans...');
         final response = await http.get(
-          uri,
+          Uri.parse(APIConstants.mobilePlansUrl).replace(queryParameters: {
+            'apikey': APIConstants.apiToken,
+            'operatorcode': operatorCode,
+            'circle': circleCode,
+          }),
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'Authorization': 'Bearer ${APIConstants.apiToken}',
           },
         ).timeout(_timeout);
         
-        _logger.d('PlanAPI Plans Response Status: ${response.statusCode}');
-        _logger.d('PlanAPI Plans Response Body: ${response.body}');
+        _logger.d('API key format Plans Response Status: ${response.statusCode}');
+        _logger.d('API key format Plans Response Body: ${response.body}');
         
         if (response.statusCode == 200) {
           final responseText = response.body.toLowerCase();
@@ -242,15 +264,52 @@ class PlanApiService {
               !responseText.contains('error') && responseText.contains('{')) {
             final Map<String, dynamic> apiResponse = json.decode(response.body);
             
-            if (apiResponse['ERROR'] == '0' && apiResponse['STATUS'] == '1') {
+            if (apiResponse['status'] == 'success' || apiResponse['Status'] == '1' || apiResponse['ERROR'] == '0') {
               final mobilePlans = _createMobilePlansFromResponse(apiResponse);
-              _logger.i('✅ Plans fetched via PlanAPI: ${mobilePlans.plans.length} plans');
+              _logger.i('✅ Plans fetched via PlanAPI (API key): ${mobilePlans.plans.length} plans');
               return mobilePlans;
             }
           }
         }
       } catch (e) {
-        _logger.w('PlanAPI.in Plans endpoint is not accessible: $e');
+        _logger.w('API key format for plans failed: $e');
+      }
+
+      // Try userid/password format
+      try {
+        _logger.d('Trying userid/password format for plans...');
+        final response = await http.get(
+          Uri.parse(APIConstants.mobilePlansUrl).replace(queryParameters: {
+            'userid': APIConstants.apiUserId,
+            'password': APIConstants.apiPassword,
+            'format': 'json',
+            'operator': operatorCode,
+            'circle': circleCode,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ).timeout(_timeout);
+        
+        _logger.d('Userid/password Plans Response Status: ${response.statusCode}');
+        _logger.d('Userid/password Plans Response Body: ${response.body}');
+        
+        if (response.statusCode == 200) {
+          final responseText = response.body.toLowerCase();
+          if (!responseText.contains('404') && !responseText.contains('not found') && 
+              !responseText.contains('error') && responseText.contains('{')) {
+            final Map<String, dynamic> apiResponse = json.decode(response.body);
+            
+            if (apiResponse['status'] == 'success' || apiResponse['Status'] == '1' || apiResponse['ERROR'] == '0') {
+              final mobilePlans = _createMobilePlansFromResponse(apiResponse);
+              _logger.i('✅ Plans fetched via PlanAPI (userid/password): ${mobilePlans.plans.length} plans');
+              return mobilePlans;
+            }
+          }
+        }
+      } catch (e) {
+        _logger.w('Userid/password format for plans failed: $e');
       }
       
       // Fall back to demo plans with clear API status

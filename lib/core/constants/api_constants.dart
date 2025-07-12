@@ -1,21 +1,21 @@
 class APIConstants {
-  // PlanAPI.in Configuration - Direct API Integration
+  // PlanAPI.in Configuration - Updated with correct credentials
   static const String planApiBaseUrl = 'https://planapi.in/api/Mobile';
   static const String apiUserId = '3557';
   static const String apiPassword = 'Neela@1988';
-  static const String apiToken = '26f19318-b8c7-4a29-8404-02c9ba48680a';
+  static const String apiToken = '81bd9a2a-7857-406c-96aa-056967ba859a'; // Corrected token
   
-  // Robotics Exchange API Configuration
+  // Robotics Exchange API Configuration - Updated with correct credentials
   static const String roboticsBaseUrl = 'https://api.roboticexchange.in/Robotics/webservice';
   static const String roboticsApiMemberId = '3425';
-  static const String roboticsApiPassword = 'Apipassword';
+  static const String roboticsApiPassword = 'Neela@415263'; // Corrected password
   
-  // PlanAPI.in Direct Endpoints
-  static const String operatorDetectionEndpoint = 'MobileOperator';
-  static const String mobilePlansEndpoint = 'MobilePlans';
+  // PlanAPI.in Direct Endpoints - Corrected based on test results (404 errors indicate wrong endpoints)
+  static const String operatorDetectionEndpoint = 'MobileOperator'; // Back to original (OperatorFetchNew returned 404)
+  static const String mobilePlansEndpoint = 'MobilePlans'; // Back to original (NewMobilePlans returned 404)
   static const String rOfferEndpoint = 'Roffer';
   static const String lastRechargeEndpoint = 'LastRech';
-  
+   
   // Robotics Exchange API Endpoints
   static const String roboticsRechargeEndpoint = 'GetMobileRecharge';
   static const String roboticsStatusCheckEndpoint = 'GetStatus';
@@ -53,32 +53,47 @@ class APIConstants {
   static const int requestTimeout = 30000; // 30 seconds
   static const String defaultCurrency = 'INR';
   
-  // PlanAPI.in Operator Codes
-  static const Map<String, String> planApiOperatorCodes = {
-    'AIRTEL': '2',
-    'VODAFONE': '23',
-    'IDEA': '6',
-    'JIO': '11',
-    'BSNL': '5',
-    'TATA_DOCOMO': '16',
-    'UNINOR': '17',
-    'RELIANCE': '18',
-    'MTNL': '19',
-    'VIDEOCON': '20',
+  // PlanAPI.in Parameter Format - Updated based on test requirements
+  static const Map<String, String> planApiParameterFormat = {
+    'operatorDetection': 'userid,password,format,mobile', // Original format
+    'mobilePlans': 'userid,password,format,operator,circle', // Original format
+    'apiKeyFormat': 'apikey,mobileno', // Alternative if API key works
   };
   
-  // Robotics Exchange Operator Codes
-  static const Map<String, String> roboticsOperatorCodes = {
+  // PlanAPI.in Operator Codes (corrected based on user's operator table)
+  static const Map<String, String> planApiOperatorCodes = {
     'AIRTEL': '2',
-    'VODAFONE': '4',
-    'IDEA': '4',
-    'JIO': '31',
-    'BSNL': '6',
-    'TATA_DOCOMO': '16',
-    'UNINOR': '17',
-    'RELIANCE': '18',
-    'MTNL': '19',
-    'VIDEOCON': '20',
+    'BSNL TOPUP': '4',
+    'BSNL SPECIAL': '5',
+    'IDEA': '6',
+    'RELIANCE JIO': '11',
+    'VODAFONE': '23',
+    'MATRIX PRECARD': '93',
+  };
+  
+  // Robotics Exchange Operator Codes (corrected based on user's documentation)
+  static const Map<String, String> roboticsOperatorCodes = {
+    'AIRTEL': 'AT',
+    'VODAFONE': 'VI',
+    'IDEA': 'VI', // Merged with Vodafone
+    'JIO': 'JO',
+    'BSNL': 'BS',
+    'AIRTEL_DTH': 'AD',
+    'DISH_TV': 'DT',
+    'TATASKY': 'TS',
+    'VIDEOCON': 'VD',
+    'JIO_LITE': 'JL',
+  };
+  
+  // PlanAPI to Robotics operator code mapping
+  static const Map<String, String> planApiToRoboticsMapping = {
+    '2': 'AT',   // Airtel
+    '11': 'JO',  // Jio
+    '23': 'VI',  // Vi/Vodafone
+    '6': 'VI',   // Idea (now Vi)
+    '4': 'BS',   // BSNL TOPUP
+    '5': 'BS',   // BSNL SPECIAL
+    '93': 'MC',  // Matrix Precard
   };
   
   // Indian Telecom Circles - PlanAPI.in circle codes
