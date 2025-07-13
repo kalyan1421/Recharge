@@ -58,8 +58,10 @@ class AuthProvider extends ChangeNotifier {
     String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
     if (cleanPhone.length == 10) {
       return '+91$cleanPhone';
+    } else if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
+      return '+${cleanPhone}';
     }
-    return cleanPhone;
+    return '+91$cleanPhone';
   }
   
   AuthProvider() {
@@ -88,8 +90,12 @@ class AuthProvider extends ChangeNotifier {
         _logger.i('User authenticated: ${user.uid}');
       } catch (e) {
         _logger.e('Failed to load user data: $e');
-        _authState = AuthState.error;
-        _setError('Failed to load user data');
+        // Don't set error state if user is authenticated but data loading fails
+        // This allows the app to continue with basic user info
+        _authState = AuthState.otpVerified;
+        _userData = null;
+        await _saveUserSession(user);
+        _logger.w('Continuing with authenticated user despite data loading failure');
       }
     } else {
       _userData = null;
@@ -101,33 +107,62 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
   
+  /// Check if user is already authenticated (for recovery scenarios)
+  Future<bool> checkCurrentAuthState() async {
+    try {
+      final currentUser = FirebaseConfig.auth.currentUser;
+      if (currentUser != null) {
+        _logger.i('Found existing authenticated user: ${currentUser.uid}');
+        _currentUser = currentUser;
+        
+        // Try to load user data
+        try {
+          _userData = await _authRepository.getUserData(currentUser.uid);
+          _authState = AuthState.authenticated;
+        } catch (e) {
+          _logger.w('Could not load user data, treating as new user: $e');
+          _userData = null;
+          _authState = AuthState.otpVerified;
+        }
+        
+        await _saveUserSession(currentUser);
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      _logger.e('Error checking current auth state: $e');
+      return false;
+    }
+  }
+  
   /// Send OTP to phone number
   Future<bool> sendOtp(String phoneNumber) async {
     try {
       _setLoading(true);
       _clearError();
       
+      // Clean and validate phone number
+      String cleanPhone = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+      if (cleanPhone.startsWith('91')) {
+        cleanPhone = cleanPhone.substring(2);
+      }
+      
       // Validate phone number
-      if (!isValidPhoneNumber(phoneNumber)) {
+      if (!isValidPhoneNumber(cleanPhone)) {
         _setError('Please enter a valid 10 digit mobile number');
         return false;
       }
       
       // Format phone number with country code
-      final formattedPhone = formatPhoneNumber(phoneNumber);
-      _currentPhoneNumber = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+      final formattedPhone = formatPhoneNumber(cleanPhone);
+      _currentPhoneNumber = cleanPhone;
       
       _logger.i('Sending OTP to: $formattedPhone');
       
-      if (kIsWeb) {
-        // Web implementation
-        return await _sendOTPWeb(formattedPhone);
-      } else {
-        // Mobile implementation
-        return await _sendOTPMobile(formattedPhone);
-      }
+      return await _sendOTPMobile(formattedPhone);
       
-    } catch (e, stackTrace) {
+    } catch (e) {
       _logger.e('Send OTP failed: $e');
       _setError('Failed to send OTP. Please try again.');
       return false;
@@ -210,8 +245,6 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
       
-      _logger.i('Using real Firebase OTP verification');
-      
       if (_verificationId.isEmpty) {
         _setError('Verification session expired. Please resend OTP.');
         return false;
@@ -219,16 +252,195 @@ class AuthProvider extends ChangeNotifier {
       
       _logger.i('Verifying OTP: $otp');
       
-      // Use mobile OTP verification for all platforms
-      return await _verifyOTPMobile(otp);
+      // Create credential with enhanced error handling
+      PhoneAuthCredential credential;
+      try {
+        credential = PhoneAuthProvider.credential(
+          verificationId: _verificationId,
+          smsCode: otp,
+        );
+      } catch (credentialError) {
+        _logger.e('Error creating credential: $credentialError');
+        _setError('Authentication failed. Please try again.');
+        return false;
+      }
       
-    } catch (e, stackTrace) {
+      // Sign in with credential with multiple retry strategies
+      UserCredential? userCredential;
+      int maxAttempts = 3;
+      
+      for (int attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          _logger.i('Sign-in attempt ${attempt + 1}/$maxAttempts');
+          
+          // Add a small delay between attempts to avoid rapid retries
+          if (attempt > 0) {
+            await Future.delayed(Duration(milliseconds: 500 * attempt));
+          }
+          
+          userCredential = await FirebaseConfig.auth.signInWithCredential(credential);
+          
+          // If successful, break out of retry loop
+          if (userCredential != null) {
+            _logger.i('Sign-in successful on attempt ${attempt + 1}');
+            break;
+          }
+          
+        } catch (signInError) {
+          _logger.e('Sign-in attempt ${attempt + 1} failed: $signInError');
+          
+          // Handle specific Firebase Auth errors
+          if (signInError is FirebaseAuthException) {
+            switch (signInError.code) {
+              case 'invalid-verification-code':
+                _setError('Invalid OTP. Please check and try again.');
+                return false;
+              case 'session-expired':
+                _setError('OTP session expired. Please request a new OTP.');
+                return false;
+              case 'too-many-requests':
+                _setError('Too many attempts. Please try again later.');
+                return false;
+              default:
+                if (attempt == maxAttempts - 1) {
+                  _setError('Authentication failed. Please try again.');
+                  return false;
+                }
+            }
+          } else if (signInError.toString().contains('PigeonUserDetails')) {
+            _logger.w('PigeonUserDetails error detected on attempt ${attempt + 1}');
+            
+            // If it's the last attempt, try a different approach
+            if (attempt == maxAttempts - 1) {
+              _logger.i('Attempting alternative authentication flow...');
+              
+              // Try to check if user is already authenticated
+              final currentUser = FirebaseConfig.auth.currentUser;
+              if (currentUser != null) {
+                _logger.i('User is already authenticated, proceeding with current user');
+                // Instead of creating a fake UserCredential, just use the current user
+                userCredential = null; // We'll handle this case below
+                _currentUser = currentUser;
+                break;
+              } else {
+                _setError('Authentication service error. Please restart the app and try again.');
+                return false;
+              }
+            }
+            // Continue to next attempt for PigeonUserDetails error
+            continue;
+          } else {
+            if (attempt == maxAttempts - 1) {
+              _setError('Authentication failed. Please try again.');
+              return false;
+            }
+          }
+        }
+      }
+      
+      // Handle both normal credential flow and fallback current user flow
+      final user = userCredential?.user ?? _currentUser;
+      
+      if (user != null) {
+        _currentUser = user;
+        
+        try {
+          // Load user data from Firestore with better error handling
+          DocumentSnapshot? userDoc;
+          try {
+            userDoc = await FirebaseConfig.firestore.collection('users').doc(user.uid).get();
+          } catch (firestoreError) {
+            _logger.e('Firestore error: $firestoreError');
+            // Continue with new user flow if Firestore fails
+            userDoc = null;
+          }
+          
+          if (userDoc != null && userDoc.exists && userDoc.data() != null) {
+            // Existing user
+            try {
+              _userData = domain.User.fromFirestore(userDoc);
+              _authState = AuthState.authenticated;
+              _logger.i('Existing user verified OTP: ${user.uid}');
+            } catch (userParseError) {
+              _logger.e('Error parsing user data: $userParseError');
+              // Treat as new user if parsing fails
+              _userData = null;
+              _authState = AuthState.otpVerified;
+              _logger.i('User data parsing failed, treating as new user: ${user.uid}');
+            }
+          } else {
+            // New user
+            _userData = null;
+            _authState = AuthState.otpVerified;
+            _logger.i('New user verified OTP: ${user.uid}');
+          }
+          
+          await _saveUserSession(user);
+          _stopOTPTimer();
+          notifyListeners();
+          return true;
+        } catch (e) {
+          _logger.e('Error in user data processing: $e');
+          // Even if user data loading fails, OTP verification was successful
+          _userData = null;
+          _authState = AuthState.otpVerified;
+          await _saveUserSession(user);
+          _stopOTPTimer();
+          notifyListeners();
+          return true;
+        }
+      }
+      
+      _setError('Verification failed. Please try again.');
+      return false;
+      
+    } catch (e) {
       _logger.e('OTP verification failed: $e');
-      _setError('Invalid OTP. Please try again.');
+      
+      // Handle the specific PigeonUserDetails error
+      if (e.toString().contains('PigeonUserDetails')) {
+        _logger.e('Firebase Auth internal error detected');
+        _setError('Authentication service error. Please restart the app and try again.');
+      } else if (e is FirebaseAuthException) {
+        _setError(_getErrorMessage(e));
+      } else {
+        _setError('Invalid OTP. Please try again.');
+      }
       return false;
     } finally {
       _setLoading(false);
     }
+  }
+  
+  /// Verify OTP with retry mechanism for Firebase Auth issues
+  Future<bool> verifyOtpWithRetry(String otp, {int maxRetries = 2}) async {
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        final result = await verifyOtp(otp);
+        if (result) return true;
+        
+        // If not successful and not the last attempt, wait before retry
+        if (attempt < maxRetries - 1) {
+          _logger.i('OTP verification attempt ${attempt + 1} failed, retrying...');
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } catch (e) {
+        _logger.e('OTP verification attempt ${attempt + 1} failed: $e');
+        
+        // If it's the PigeonUserDetails error, try once more
+        if (e.toString().contains('PigeonUserDetails') && attempt < maxRetries - 1) {
+          _logger.i('Retrying due to Firebase Auth internal error...');
+          await Future.delayed(const Duration(seconds: 2));
+          continue;
+        }
+        
+        // If it's the last attempt or a different error, rethrow
+        if (attempt == maxRetries - 1) {
+          rethrow;
+        }
+      }
+    }
+    return false;
   }
   
   /// Verify OTP for mobile platforms
@@ -736,6 +948,36 @@ class AuthProvider extends ChangeNotifier {
       return false;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Reset authentication state completely (for recovery scenarios)
+  Future<void> resetAuthState() async {
+    try {
+      _logger.i('Resetting authentication state...');
+      
+      // Sign out from Firebase
+      await FirebaseConfig.auth.signOut();
+      
+      // Clear all local state
+      _currentUser = null;
+      _userData = null;
+      _authState = AuthState.unauthenticated;
+      _verificationId = '';
+      _currentPhoneNumber = null;
+      _errorMessage = '';
+      _isLoading = false;
+      
+      // Clear user session
+      await _clearUserSession();
+      
+      // Stop any running timers
+      _stopOTPTimer();
+      
+      _logger.i('Authentication state reset completed');
+      notifyListeners();
+    } catch (e) {
+      _logger.e('Error resetting auth state: $e');
     }
   }
 

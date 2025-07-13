@@ -1,316 +1,182 @@
 #!/bin/bash
 
-echo "Starting proxy server setup..."
+# Step 1: Connect to your EC2 instance
+echo "Connecting to EC2 instance..."
+# ssh -i "rechager.pem" ec2-user@56.228.11.165
 
-# Update system
+# Step 2: Update system and install Node.js
+echo "Updating system and installing Node.js..."
 sudo yum update -y
+sudo yum install -y nodejs npm
 
-# Install Node.js
-curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-sudo yum install -y nodejs
+# Verify installation
+node --version
+npm --version
 
-# Install PM2 globally
-sudo npm install -g pm2
+# Step 3: Create proxy application
+echo "Setting up proxy application..."
+mkdir -p ~/planapi-proxy
+cd ~/planapi-proxy
 
-# Install Nginx
-sudo yum install -y nginx
-
-# Create proxy server directory
-mkdir -p ~/proxy-server
-cd ~/proxy-server
-
-# Create package.json
-cat > package.json << 'EOF'
-{
-  "name": "recharge-proxy",
-  "version": "1.0.0",
-  "description": "Proxy server for PlanAPI.in",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "axios": "^1.6.0",
-    "helmet": "^7.1.0"
-  }
-}
-EOF
+# Initialize npm project
+npm init -y
 
 # Install dependencies
-npm install
+npm install express http-proxy-middleware cors dotenv
 
-# Create the proxy server
+# Step 4: Create the proxy server file
 cat > server.js << 'EOF'
 const express = require('express');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
-const axios = require('axios');
-const helmet = require('helmet');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
+// Enable CORS for all origins
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-// PlanAPI.in configuration
-const PLAN_API_BASE_URL = 'https://planapi.in/api';
-const API_KEY = '81bd9a2a-7857-406c-96aa-056967ba859a';
-const API_ID = '3557';
-const API_PASSWORD = 'Neela@1988';
-
-// Helper function to make API calls with error handling
-async function makeApiCall(url, params = {}) {
-  try {
-    console.log(`Making API call to: ${url}`);
-    console.log('Params:', params);
-    
-    const response = await axios.get(url, {
-      params,
-      timeout: 25000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
-    console.log('API Response status:', response.status);
-    return response.data;
-  } catch (error) {
-    console.error('API call failed:', error.message);
-    if (error.response) {
-      console.error('Error response:', error.response.data);
-      throw new Error(`API Error: ${error.response.status} - ${error.response.data.message || error.response.data}`);
-    } else if (error.request) {
-      throw new Error('Network Error: Unable to reach the API');
-    } else {
-      throw new Error(`Request Error: ${error.message}`);
-    }
-  }
-}
+// Logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log('Query params:', req.query);
+  next();
+});
 
 // Health check endpoint
-app.get('/', (req, res) => {
+app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    message: 'Recharge Proxy Server is running',
+    timestamp: new Date().toISOString(),
+    server: 'PlanAPI Proxy',
+    version: '1.0.0'
+  });
+});
+
+// Proxy middleware for Plan API
+const planApiProxy = createProxyMiddleware({
+  target: 'https://planapi.in',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api/planapi': '/api'
+  },
+  onProxyReq: (proxyReq, req, res) => {
+    // Remove forwarding headers to ensure PlanAPI sees the proxy's IP
+    proxyReq.removeHeader('x-forwarded-for');
+    proxyReq.removeHeader('x-forwarded-host');
+    proxyReq.removeHeader('x-forwarded-proto');
+    
+    console.log('Proxying request to:', proxyReq.path);
+    console.log('Target URL:', `https://planapi.in${proxyReq.path}`);
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    console.log('Received response with status:', proxyRes.statusCode);
+  },
+  onError: (err, req, res) => {
+    console.error('Proxy error:', err.message);
+    res.status(500).json({ 
+      error: 'Proxy error', 
+      message: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Use the proxy for Plan API requests
+app.use('/api/planapi', planApiProxy);
+
+// Default route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'PlanAPI Proxy Server',
+    endpoints: {
+      health: '/health',
+      planapi: '/api/planapi/Mobile/OperatorFetchNew'
+    },
     timestamp: new Date().toISOString()
   });
 });
 
-// Operator detection endpoint
-app.get('/api/operator-detection', async (req, res) => {
-  try {
-    const { mobile } = req.query;
-    
-    if (!mobile) {
-      return res.status(400).json({ error: 'Mobile number is required' });
-    }
-    
-    const url = `${PLAN_API_BASE_URL}/Operatordetection.php`;
-    const params = {
-      api_key: API_KEY,
-      userid: API_ID,
-      password: API_PASSWORD,
-      mobile: mobile
-    };
-    
-    const data = await makeApiCall(url, params);
-    res.json(data);
-  } catch (error) {
-    console.error('Operator detection error:', error);
-    res.status(500).json({ 
-      error: 'Failed to detect operator',
-      message: error.message 
-    });
-  }
-});
-
-// Mobile plans endpoint
-app.get('/api/mobile-plans', async (req, res) => {
-  try {
-    const { operatorcode, circle } = req.query;
-    
-    if (!operatorcode || !circle) {
-      return res.status(400).json({ 
-        error: 'Operator code and circle are required' 
-      });
-    }
-    
-    const url = `${PLAN_API_BASE_URL}/MobilePlans.php`;
-    const params = {
-      api_key: API_KEY,
-      userid: API_ID,
-      password: API_PASSWORD,
-      operatorcode: operatorcode,
-      circle: circle
-    };
-    
-    const data = await makeApiCall(url, params);
-    res.json(data);
-  } catch (error) {
-    console.error('Mobile plans error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch mobile plans',
-      message: error.message 
-    });
-  }
-});
-
-// R-offers endpoint
-app.get('/api/r-offers', async (req, res) => {
-  try {
-    const { operatorcode, circle } = req.query;
-    
-    if (!operatorcode || !circle) {
-      return res.status(400).json({ 
-        error: 'Operator code and circle are required' 
-      });
-    }
-    
-    const url = `${PLAN_API_BASE_URL}/Roffers.php`;
-    const params = {
-      api_key: API_KEY,
-      userid: API_ID,
-      password: API_PASSWORD,
-      operatorcode: operatorcode,
-      circle: circle
-    };
-    
-    const data = await makeApiCall(url, params);
-    res.json(data);
-  } catch (error) {
-    console.error('R-offers error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch R-offers',
-      message: error.message 
-    });
-  }
-});
-
-// Recharge endpoint
-app.post('/api/recharge', async (req, res) => {
-  try {
-    const { mobile, operatorcode, circle, amount, orderId } = req.body;
-    
-    if (!mobile || !operatorcode || !circle || !amount || !orderId) {
-      return res.status(400).json({ 
-        error: 'All fields are required: mobile, operatorcode, circle, amount, orderId' 
-      });
-    }
-    
-    const url = `${PLAN_API_BASE_URL}/Recharge.php`;
-    const params = {
-      api_key: API_KEY,
-      userid: API_ID,
-      password: API_PASSWORD,
-      mobile: mobile,
-      operatorcode: operatorcode,
-      circle: circle,
-      amount: amount,
-      orderId: orderId
-    };
-    
-    const data = await makeApiCall(url, params);
-    res.json(data);
-  } catch (error) {
-    console.error('Recharge error:', error);
-    res.status(500).json({ 
-      error: 'Failed to process recharge',
-      message: error.message 
-    });
-  }
-});
-
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: error.message 
-  });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    error: 'Endpoint not found',
-    path: req.originalUrl 
-  });
-});
-
-app.listen(PORT, () => {
-  console.log(`Proxy server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/`);
+// Start the server
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Proxy server running on port ${PORT}`);
+  console.log(`📊 Health check: http://56.228.11.165:${PORT}/health`);
+  console.log(`📱 Plan API proxy: http://56.228.11.165:${PORT}/api/planapi/Mobile/OperatorFetchNew`);
+  console.log(`🌐 Server accessible at: http://56.228.11.165:${PORT}`);
 });
 EOF
 
-# Start the server with PM2
-pm2 start server.js --name "recharge-proxy"
-pm2 save
-pm2 startup
+# Step 5: Create a simple startup script
+cat > start.sh << 'EOF'
+#!/bin/bash
+echo "Starting PlanAPI Proxy Server..."
+cd ~/planapi-proxy
+npm start
+EOF
 
-# Configure Nginx
-sudo tee /etc/nginx/nginx.conf > /dev/null << 'EOF'
-user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log;
-pid /run/nginx.pid;
+chmod +x start.sh
 
-events {
-    worker_connections 1024;
-}
-
-http {
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent" "$http_x_forwarded_for"';
-
-    access_log /var/log/nginx/access.log main;
-
-    sendfile on;
-    tcp_nopush on;
-    tcp_nodelay on;
-    keepalive_timeout 65;
-    types_hash_max_size 2048;
-
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
-
-    server {
-        listen 80;
-        server_name _;
-
-        location / {
-            proxy_pass http://localhost:3000;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_cache_bypass $http_upgrade;
-            proxy_read_timeout 86400;
-        }
-    }
+# Step 6: Create package.json scripts
+cat > package.json << 'EOF'
+{
+  "name": "planapi-proxy",
+  "version": "1.0.0",
+  "description": "Proxy server for PlanAPI to handle IP whitelisting",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "pm2:start": "pm2 start server.js --name planapi-proxy",
+    "pm2:stop": "pm2 stop planapi-proxy",
+    "pm2:restart": "pm2 restart planapi-proxy",
+    "pm2:logs": "pm2 logs planapi-proxy"
+  },
+  "keywords": ["proxy", "planapi", "aws", "ec2"],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^2.0.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  }
 }
 EOF
 
-# Start Nginx
-sudo systemctl enable nginx
-sudo systemctl start nginx
+# Step 7: Install PM2 for process management (optional but recommended)
+sudo npm install -g pm2
 
-echo "Setup complete!"
-echo "Server should be running at: http://56.228.11.165"
+# Step 7.5: Configure Firewall
+echo "Configuring firewall..."
+sudo yum install -y firewalld
+sudo systemctl start firewalld
+sudo systemctl enable firewalld
+sudo firewall-cmd --zone=public --add-port=3000/tcp --permanent
+sudo firewall-cmd --reload
+
+# Step 8: Test the setup
+echo "Testing the proxy setup..."
+echo "Starting server in background..."
+nohup npm start > proxy.log 2>&1 &
+
+# Wait a few seconds for server to start
+sleep 5
+
+# Test health endpoint
+echo "Testing health endpoint..."
+curl -s http://localhost:3000/health | jq . || curl -s http://localhost:3000/health
+
 echo ""
-echo "To check status:"
-echo "  pm2 status"
-echo "  sudo systemctl status nginx"
+echo "✅ Proxy setup complete!"
+echo "🌐 Server running at: http://56.228.11.165:3000"
+echo "📊 Health check: http://56.228.11.165:3000/health"
+echo "📱 API endpoint: http://56.228.11.165:3000/api/planapi/Mobile/OperatorFetchNew"
 echo ""
-echo "To view logs:"
-echo "  pm2 logs recharge-proxy"
-echo "  sudo tail -f /var/log/nginx/error.log" 
+echo "To start with PM2: npm run pm2:start"
+echo "To view logs: npm run pm2:logs"
+echo "To stop: npm run pm2:stop" 

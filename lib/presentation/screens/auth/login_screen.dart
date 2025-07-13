@@ -17,6 +17,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
+  bool _isLoading = false;
+  String? _errorText;
 
   @override
   void dispose() {
@@ -27,13 +29,36 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final authProvider = context.read<AuthProvider>();
     final phoneNumber = _phoneController.text.trim();
+    if (phoneNumber.isEmpty || phoneNumber.length != 10) {
+      setState(() {
+        _errorText = 'Please enter a valid 10-digit phone number';
+      });
+      return;
+    }
 
-    final success = await authProvider.sendOtp(phoneNumber);
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+    });
 
-    if (mounted && success) {
-      GoRouter.of(context).pushNamed('otp-verification', extra: phoneNumber);
+    try {
+      await context.read<AuthProvider>().sendOtp('+91$phoneNumber');
+      if (mounted) {
+        context.go('/otp-verification', extra: phoneNumber);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorText = 'Failed to send OTP. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

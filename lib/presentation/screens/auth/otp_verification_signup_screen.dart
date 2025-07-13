@@ -45,23 +45,58 @@ class _OtpVerificationSignupScreenState extends State<OtpVerificationSignupScree
 
     setState(() => _isLoading = true);
 
-    final authProvider = context.read<AuthProvider>();
-    final success = await authProvider.verifyOtp(_otpCode);
-
-    if (mounted) {
-      setState(() => _isLoading = false);
+    try {
+      final authProvider = context.read<AuthProvider>();
       
-      if (success) {
-        // Check auth state to determine next step
-        if (authProvider.authState == AuthState.otpVerified) {
-          // Navigate to registration forms for new users
-          GoRouter.of(context).pushNamed('registration', extra: widget.phoneNumber);
-        } else if (authProvider.authState == AuthState.authenticated) {
-          // Navigate to home for existing users
-          GoRouter.of(context).goNamed('home');
+      // First try normal verification
+      bool success = await authProvider.verifyOtpWithRetry(_otpCode);
+      
+      // If failed due to Firebase auth issues, try checking current auth state
+      if (!success && authProvider.errorMessage.contains('Authentication service error')) {
+        // Check if user is already authenticated in Firebase
+        final isAlreadyAuth = await authProvider.checkCurrentAuthState();
+        if (isAlreadyAuth) {
+          success = true;
         }
-      } else {
-        _showErrorSnackBar(authProvider.errorMessage ?? 'OTP verification failed');
+      }
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+        
+        if (success) {
+          // Check auth state to determine next step
+          if (authProvider.authState == AuthState.otpVerified) {
+            // Navigate to registration forms for new users
+            GoRouter.of(context).pushNamed('registration', extra: widget.phoneNumber);
+          } else if (authProvider.authState == AuthState.authenticated) {
+            // Navigate to home for existing users
+            GoRouter.of(context).goNamed('home');
+          }
+        } else {
+          String errorMessage = authProvider.errorMessage ?? 'OTP verification failed';
+          
+          // Provide more user-friendly error messages
+          if (errorMessage.contains('Authentication service error')) {
+            errorMessage = 'Authentication service is temporarily unavailable. Please try again or restart the app.';
+          } else if (errorMessage.contains('PigeonUserDetails')) {
+            errorMessage = 'Authentication error. Please restart the app and try again.';
+          }
+          
+          _showErrorSnackBar(errorMessage);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        
+        String errorMessage = 'An unexpected error occurred. Please try again.';
+        
+        // Handle specific error types
+        if (e.toString().contains('PigeonUserDetails')) {
+          errorMessage = 'Authentication error. Please restart the app and try again.';
+        }
+        
+        _showErrorSnackBar(errorMessage);
       }
     }
   }

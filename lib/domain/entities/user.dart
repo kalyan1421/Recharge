@@ -70,47 +70,55 @@ class User extends Equatable {
   });
 
   factory User.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data();
+    if (data == null) {
+      throw Exception('Document data is null');
+    }
+    
+    final Map<String, dynamic> userData = data as Map<String, dynamic>;
+    
+    // Helper function to safely get enum value
+    T getEnumValue<T extends Enum>(List<T> values, String? value, T defaultValue) {
+      if (value == null) return defaultValue;
+      try {
+        return values.firstWhere(
+          (e) => e.toString().split('.').last.toLowerCase() == value.toLowerCase(),
+          orElse: () => defaultValue,
+        );
+      } catch (_) {
+        return defaultValue;
+      }
+    }
     
     return User(
       userId: doc.id,
-      mobile: data['mobile'] ?? '',
-      name: data['name'] ?? '',
-      email: data['email'] ?? '',
-      type: UserType.values.firstWhere(
-        (e) => e.toString() == 'UserType.${data['type']}',
-        orElse: () => UserType.b2c,
-      ),
-      walletId: data['walletId'] ?? '',
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      isKYCVerified: data['isKYCVerified'] ?? false,
-      status: UserStatus.values.firstWhere(
-        (e) => e.toString() == 'UserStatus.${data['status']}',
-        orElse: () => UserStatus.active,
-      ),
-      tier: UserTier.values.firstWhere(
-        (e) => e.toString() == 'UserTier.${data['tier']}',
-        orElse: () => UserTier.bronze,
-      ),
-      profileImage: data['profileImage'],
-      lastLoginAt: (data['lastLoginAt'] as Timestamp?)?.toDate(),
-      isBiometricEnabled: data['isBiometricEnabled'] ?? false,
-      referralCode: data['referralCode'],
-      referredBy: data['referredBy'],
-      // Additional registration fields
-      businessName: data['businessName'],
-      gstNumber: data['gstNumber'],
-      dateOfBirth: (data['dateOfBirth'] as Timestamp?)?.toDate(),
-      address: data['address'],
-      pincode: data['pincode'],
-      village: data['village'],
-      taluk: data['taluk'],
-      district: data['district'],
-      state: data['state'],
-      aadharNumber: data['aadharNumber'],
-      panNumber: data['panNumber'],
-      firstName: data['firstName'],
-      lastName: data['lastName'],
+      mobile: userData['mobile']?.toString() ?? '',
+      name: userData['name']?.toString() ?? '',
+      email: userData['email']?.toString() ?? '',
+      type: getEnumValue(UserType.values, userData['type']?.toString(), UserType.b2c),
+      walletId: userData['walletId']?.toString() ?? '',
+      createdAt: (userData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      isKYCVerified: userData['isKYCVerified'] as bool? ?? false,
+      status: getEnumValue(UserStatus.values, userData['status']?.toString(), UserStatus.active),
+      tier: getEnumValue(UserTier.values, userData['tier']?.toString(), UserTier.bronze),
+      profileImage: userData['profileImage']?.toString(),
+      lastLoginAt: (userData['lastLoginAt'] as Timestamp?)?.toDate(),
+      isBiometricEnabled: userData['isBiometricEnabled'] as bool? ?? false,
+      referralCode: userData['referralCode']?.toString(),
+      referredBy: userData['referredBy']?.toString(),
+      businessName: userData['businessName']?.toString(),
+      gstNumber: userData['gstNumber']?.toString(),
+      dateOfBirth: (userData['dateOfBirth'] as Timestamp?)?.toDate(),
+      address: userData['address']?.toString(),
+      pincode: userData['pincode']?.toString(),
+      village: userData['village']?.toString(),
+      taluk: userData['taluk']?.toString(),
+      district: userData['district']?.toString(),
+      state: userData['state']?.toString(),
+      aadharNumber: userData['aadharNumber']?.toString(),
+      panNumber: userData['panNumber']?.toString(),
+      firstName: userData['firstName']?.toString(),
+      lastName: userData['lastName']?.toString(),
     );
   }
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -14,7 +16,10 @@ class HomeScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      body: const Center(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -35,6 +40,25 @@ class HomeScreen extends StatelessWidget {
             Text('Welcome to SamyPay!'),
           ],
         ),
+          ),
+
+          // Development Test Button (can be removed in production)
+          if (kDebugMode)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  context.pushNamed('recharge-test');
+                },
+                icon: Icon(Icons.bug_report),
+                label: Text('Test Live Recharge'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

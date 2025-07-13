@@ -1,5 +1,5 @@
-name: samypay
-description: SamyPay - A complete recharge and payment application
+name: recharger
+description: A mobile recharge application with Plan API integration.
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -35,16 +35,16 @@ dependencies:
   cupertino_icons: ^1.0.2
 
   # State Management
-  provider: ^6.1.1
+  provider: ^6.0.5
   riverpod: ^2.4.9
   flutter_riverpod: ^2.4.9
 
   # Networking & API
-  dio: ^5.4.0
-  http: ^1.1.0
+  dio: ^5.3.2
+  http: ^1.2.0
   retrofit: ^4.0.3
-  json_annotation: ^4.8.1
-  connectivity_plus: ^5.0.2
+  json_annotation: ^4.9.0
+  connectivity_plus: ^5.0.1
 
   # Local Storage
   hive: ^2.2.3
@@ -58,14 +58,14 @@ dependencies:
   permission_handler: ^11.1.0
 
   # Firebase
-  firebase_core: ^3.8.0
-  firebase_auth: ^5.4.3
-  firebase_app_check: ^0.3.1+4
-  firebase_crashlytics: ^4.1.8
-  firebase_analytics: ^11.5.0
-  firebase_messaging: ^15.2.4
-  cloud_firestore: ^5.6.0
-  firebase_storage: ^12.4.2
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.15.3
+  firebase_app_check: ^0.2.1+8
+  firebase_crashlytics: ^3.4.8
+  firebase_analytics: ^10.7.4  # Updated to be compatible with firebase_core ^2.24.2
+  firebase_messaging: ^14.7.9
+  cloud_firestore: ^4.13.6
+  firebase_storage: ^11.6.5  # Downgraded to be compatible with firebase_core ^2.24.2
 
   # Payment Gateways
   razorpay_flutter: ^1.3.6
@@ -125,13 +125,15 @@ dependencies:
   # Development Tools
   logger: ^2.0.2+1
   equatable: ^2.0.5
+  build_runner: ^2.4.8
+  json_serializable: ^6.7.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   # Linting & Code Quality
-  flutter_lints: ^3.0.0
+  flutter_lints: ^2.0.0
   very_good_analysis: ^5.1.0
 
   # Code Generation

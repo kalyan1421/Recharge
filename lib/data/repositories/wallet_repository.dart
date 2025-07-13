@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../domain/entities/wallet.dart';
 import '../../domain/entities/wallet_transaction.dart';
+import '../../core/constants/api_constants.dart';
 
 class WalletRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -64,9 +68,8 @@ class WalletRepository {
 
       switch (method) {
         case PaymentMethod.upi:
-        case PaymentMethod.debit_card:
-        case PaymentMethod.credit_card:
-        case PaymentMethod.net_banking:
+        case PaymentMethod.card:
+        case PaymentMethod.netbanking:
           await _processRazorpayPayment(
             amount: amount,
             userId: userId,
@@ -131,13 +134,18 @@ class WalletRepository {
       
       // Add transaction record
       final transaction = WalletTransaction(
+        id: transactionId,
         transactionId: transactionId,
-        walletId: walletId,
+        userId: 'demo_user', // TODO: Get actual userId
         amount: amount,
         type: WalletTransactionType.debit,
         description: purpose,
         timestamp: DateTime.now(),
-        status: TransactionStatus.completed,
+        status: WalletTransactionStatus.success,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        balanceAfter: currentBalance - amount,
+        balanceBefore: currentBalance,
       );
       
       _transactions.putIfAbsent(walletId, () => []).add(transaction);
@@ -161,13 +169,18 @@ class WalletRepository {
     
     // Add transaction record
     final transaction = WalletTransaction(
+      id: transactionId,
       transactionId: transactionId,
-      walletId: walletId,
+      userId: 'demo_user', // TODO: Get actual userId
       amount: amount,
       type: type,
       description: description,
       timestamp: DateTime.now(),
-      status: TransactionStatus.completed,
+      status: WalletTransactionStatus.success,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      balanceAfter: currentBalance + amount,
+      balanceBefore: currentBalance,
     );
     
     _transactions.putIfAbsent(walletId, () => []).add(transaction);
@@ -210,35 +223,51 @@ class WalletRepository {
       balance: (map['balance'] ?? 0.0).toDouble(),
       blockedAmount: (map['blockedAmount'] ?? 0.0).toDouble(),
       minBalance: (map['minBalance'] ?? 0.0).toDouble(),
-      lastUpdated: (map['lastUpdated'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      status: WalletStatus.values.firstWhere(
-        (e) => e.toString() == 'WalletStatus.${map['status']}',
-        orElse: () => WalletStatus.active,
-      ),
+      createdAt: _parseTimestamp(map['createdAt']) ?? DateTime.now(),
+      updatedAt: _parseTimestamp(map['updatedAt']) ?? DateTime.now(),
+      isActive: map['isActive'] ?? true,
       dailyLimit: (map['dailyLimit'] ?? 25000.0).toDouble(),
       monthlyLimit: (map['monthlyLimit'] ?? 200000.0).toDouble(),
       dailyUsed: (map['dailyUsed'] ?? 0.0).toDouble(),
       monthlyUsed: (map['monthlyUsed'] ?? 0.0).toDouble(),
-      isAutoRechargeEnabled: map['isAutoRechargeEnabled'] ?? false,
-      autoRechargeThreshold: (map['autoRechargeThreshold'] ?? 50.0).toDouble(),
     );
   }
 
   WalletTransaction _transactionFromMap(Map<String, dynamic> map) {
     return WalletTransaction(
-      walletTransactionId: map['walletTransactionId'] ?? map['transactionId'] ?? '',
-      walletId: map['walletId'] ?? '',
+      id: map['id'] ?? map['transactionId'] ?? '',
+      transactionId: map['transactionId'] ?? '',
       userId: map['userId'] ?? '',
       amount: (map['amount'] ?? 0.0).toDouble(),
+      status: WalletTransactionStatus.values.firstWhere(
+        (e) => e.toString() == 'WalletTransactionStatus.${map['status']}',
+        orElse: () => WalletTransactionStatus.pending,
+      ),
       type: WalletTransactionType.values.firstWhere(
         (e) => e.toString() == 'WalletTransactionType.${map['type']}',
         orElse: () => WalletTransactionType.debit,
       ),
+      description: map['description'] ?? map['remarks'] ?? '',
       balanceBefore: (map['balanceBefore'] ?? 0.0).toDouble(),
       balanceAfter: (map['balanceAfter'] ?? 0.0).toDouble(),
-      timestamp: (map['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      remarks: map['description'] ?? map['remarks'],
+      timestamp: _parseTimestamp(map['timestamp']) ?? DateTime.now(),
+      createdAt: _parseTimestamp(map['createdAt']) ?? DateTime.now(),
+      updatedAt: _parseTimestamp(map['updatedAt']) ?? DateTime.now(),
     );
+  }
+
+  DateTime? _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
+    if (timestamp is Timestamp) return timestamp.toDate();
+    if (timestamp is DateTime) return timestamp;
+    if (timestamp is String) {
+      try {
+        return DateTime.parse(timestamp);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
   }
 
   void dispose() {
