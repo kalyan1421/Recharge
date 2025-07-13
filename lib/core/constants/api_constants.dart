@@ -1,141 +1,120 @@
 class APIConstants {
-  // PlanAPI.in Configuration - Updated with correct credentials
-  static const String planApiBaseUrl = 'https://planapi.in/api/Mobile';
-  static const String apiUserId = '3557';
-  static const String apiPassword = 'Neela@1988';
-  static const String apiToken = '81bd9a2a-7857-406c-96aa-056967ba859a'; // Corrected token
+  // Plan API Configuration
+  static const String planApiBaseUrl = 'https://planapi.in/api';
+  static const String planApiOperatorDetectionUrl = '$planApiBaseUrl/Mobile/OperatorFetchNew';
   
-  // Robotics Exchange API Configuration - Updated with correct credentials
-  static const String roboticsBaseUrl = 'https://api.roboticexchange.in/Robotics/webservice';
+  // API Credentials
+  static const String planApiUserId = '3557';
+  static const String planApiPassword = 'Neela@1988';
+  
+  // Robotics Exchange API Configuration
   static const String roboticsApiMemberId = '3425';
-  static const String roboticsApiPassword = 'Neela@415263'; // Corrected password
+  static const String roboticsApiPassword = 'Neela@415263';
+  static const String roboticsBaseUrl = 'https://api.roboticexchange.in/Robotics/webservice';
   
-  // PlanAPI.in Direct Endpoints - Corrected based on test results (404 errors indicate wrong endpoints)
-  static const String operatorDetectionEndpoint = 'MobileOperator'; // Back to original (OperatorFetchNew returned 404)
-  static const String mobilePlansEndpoint = 'MobilePlans'; // Back to original (NewMobilePlans returned 404)
-  static const String rOfferEndpoint = 'Roffer';
-  static const String lastRechargeEndpoint = 'LastRech';
-   
   // Robotics Exchange API Endpoints
-  static const String roboticsRechargeEndpoint = 'GetMobileRecharge';
-  static const String roboticsStatusCheckEndpoint = 'GetStatus';
-  static const String roboticsWalletBalanceEndpoint = 'GetWalletBalance';
-  static const String roboticsComplaintEndpoint = 'RechargeComplaint';
-  static const String roboticsOperatorBalanceEndpoint = 'OperatorBalance';
-  static const String roboticsLapuBalanceEndpoint = 'GetLapuWiseBal';
-  static const String roboticsLapuPurchaseEndpoint = 'GetPurchase';
-  static const String roboticsIpUpdateEndpoint = 'GetIpUpdate';
+  static const String roboticsRechargeUrl = '$roboticsBaseUrl/GetMobileRecharge';
+  static const String roboticsStatusCheckUrl = '$roboticsBaseUrl/GetStatus';
+  static const String roboticsWalletBalanceUrl = '$roboticsBaseUrl/GetWalletBalance';
+  static const String roboticsOperatorBalanceUrl = '$roboticsBaseUrl/OperatorBalance';
   
-  // Full PlanAPI.in endpoint URLs
-  static String get operatorDetectionUrl => '$planApiBaseUrl/$operatorDetectionEndpoint';
-  static String get mobilePlansUrl => '$planApiBaseUrl/$mobilePlansEndpoint';
-  static String get rOfferUrl => '$planApiBaseUrl/$rOfferEndpoint';
-  static String get roffersUrl => '$planApiBaseUrl/$rOfferEndpoint';
-  static String get lastRechargeUrl => '$planApiBaseUrl/$lastRechargeEndpoint';
-  static String get rechargeUrl => '$roboticsBaseUrl/$roboticsRechargeEndpoint';
-  static String get healthCheckUrl => '$planApiBaseUrl/Health';
-  
-  // Robotics Exchange API URLs
-  static String get roboticsRechargeUrl => '$roboticsBaseUrl/$roboticsRechargeEndpoint';
-  static String get roboticsStatusCheckUrl => '$roboticsBaseUrl/$roboticsStatusCheckEndpoint';
-  static String get roboticsWalletBalanceUrl => '$roboticsBaseUrl/$roboticsWalletBalanceEndpoint';
-  static String get roboticsComplaintUrl => '$roboticsBaseUrl/$roboticsComplaintEndpoint';
-  static String get roboticsOperatorBalanceUrl => '$roboticsBaseUrl/$roboticsOperatorBalanceEndpoint';
-  static String get roboticsLapuBalanceUrl => '$roboticsBaseUrl/$roboticsLapuBalanceEndpoint';
-  static String get roboticsLapuPurchaseUrl => '$roboticsBaseUrl/$roboticsLapuPurchaseEndpoint';
-  static String get roboticsIpUpdateUrl => '$roboticsBaseUrl/$roboticsIpUpdateEndpoint';
-  
-  // Payment Gateway Configuration
-  static const String razorpayKeyId = 'YOUR_RAZORPAY_KEY_ID';
-  static const String razorpayKeySecret = 'YOUR_RAZORPAY_KEY_SECRET';
-  
-  // Other Constants
-  static const int requestTimeout = 30000; // 30 seconds
-  static const String defaultCurrency = 'INR';
-  
-  // PlanAPI.in Parameter Format - Updated based on test requirements
-  static const Map<String, String> planApiParameterFormat = {
-    'operatorDetection': 'userid,password,format,mobile', // Original format
-    'mobilePlans': 'userid,password,format,operator,circle', // Original format
-    'apiKeyFormat': 'apikey,mobileno', // Alternative if API key works
+  // Operator Codes (based on your documentation)
+  static const Map<String, String> operatorCodes = {
+    '23': 'VODAFONE',
+    '11': 'RELIANCE JIO',
+    '6': 'IDEA',
+    '5': 'BSNL SPECIAL',
+    '4': 'BSNL TOPUP',
+    '2': 'AIRTEL',
   };
   
-  // PlanAPI.in Operator Codes (corrected based on user's operator table)
-  static const Map<String, String> planApiOperatorCodes = {
-    'AIRTEL': '2',
-    'BSNL TOPUP': '4',
-    'BSNL SPECIAL': '5',
-    'IDEA': '6',
-    'RELIANCE JIO': '11',
-    'VODAFONE': '23',
-    'MATRIX PRECARD': '93',
-  };
-  
-  // Robotics Exchange Operator Codes (corrected based on user's documentation)
+  // Robotics Exchange Operator Codes
   static const Map<String, String> roboticsOperatorCodes = {
-    'AIRTEL': 'AT',
-    'VODAFONE': 'VI',
-    'IDEA': 'VI', // Merged with Vodafone
-    'JIO': 'JO',
-    'BSNL': 'BS',
-    'AIRTEL_DTH': 'AD',
-    'DISH_TV': 'DT',
-    'TATASKY': 'TS',
-    'VIDEOCON': 'VD',
-    'JIO_LITE': 'JL',
-  };
-  
-  // PlanAPI to Robotics operator code mapping
-  static const Map<String, String> planApiToRoboticsMapping = {
     '2': 'AT',   // Airtel
     '11': 'JO',  // Jio
     '23': 'VI',  // Vi/Vodafone
-    '6': 'VI',   // Idea (now Vi)
+    '6': 'VI',   // Idea (merged with Vi)
     '4': 'BS',   // BSNL TOPUP
     '5': 'BS',   // BSNL SPECIAL
-    '93': 'MC',  // Matrix Precard
   };
   
-  // Indian Telecom Circles - PlanAPI.in circle codes
+  // Circle Codes (based on your documentation)
+  static const Map<String, String> circleCodes = {
+    '105': 'JHARKHAND',
+    '104': 'MIZZORAM',
+    '103': 'MEGHALAY',
+    '102': 'GOA',
+    '101': 'CHHATISGARH',
+    '100': 'TRIPURA',
+    '99': 'SIKKIM',
+    '49': 'AP', // Andhra Pradesh
+    '95': 'KERALA',
+    '94': 'TAMIL NADU',
+    '40': 'CHENNAI',
+    '06': 'KARNATAKA',
+    '52': 'BIHAR',
+    '16': 'NESA',
+    '56': 'ASSAM',
+    '53': 'ORISSA',
+    '51': 'WEST BENGAL',
+    '31': 'KOLKATA',
+    '70': 'RAJASTHAN',
+    '93': 'MP', // Madhya Pradesh
+    '98': 'GUJARAT',
+    '90': 'MAHARASHTRA',
+    '92': 'MUMBAI',
+    '54': 'UP(EAST)',
+    '55': 'J&K', // Jammu & Kashmir
+  };
+  
+  // Telecom Circles for Robotics Exchange
   static const Map<String, String> telecomCircles = {
     'DELHI': '10',
-    'UP(West)': '97', 
-    'PUNJAB': '02',
-    'HP': '03',
-    'HARYANA': '96',
-    'J&K': '55',
-    'UP(East)': '54',
     'MUMBAI': '92',
-    'MAHARASHTRA': '90',
-    'GUJARAT': '98',
-    'MP': '93',
-    'RAJASTHAN': '70',
-    'KOLKATTA': '31',
-    'West Bengal': '51',
-    'ORISSA': '53',
-    'NESA': '16',
-    'ASSAM': '56',
-    'BIHAR': '52',
-    'KARNATAKA': '06',
+    'KOLKATA': '31',
     'CHENNAI': '40',
+    'RAJASTHAN': '70',
+    'GUJARAT': '98',
+    'MAHARASHTRA': '90',
+    'KARNATAKA': '06',
     'TAMIL NADU': '94',
+    'ANDHRA PRADESH': '49',
     'KERALA': '95',
-    'AP': '49',
+    'WEST BENGAL': '51',
+    'BIHAR': '52',
+    'UTTAR PRADESH (EAST)': '54',
+    'UTTAR PRADESH (WEST)': '97',
+    'PUNJAB': '02',
+    'HIMACHAL PRADESH': '03',
+    'HARYANA': '96',
+    'JAMMU & KASHMIR': '55',
+    'ASSAM': '56',
+    'ORISSA': '53',
+    'MADHYA PRADESH': '93',
+    'JHARKHAND': '105',
+    'CHHATTISGARH': '101',
+    'GOA': '102',
     'SIKKIM': '99',
     'TRIPURA': '100',
-    'CHHATISGARH': '101',
-    'GOA': '102',
-    'MEGHALAY': '103',
-    'MIZZORAM': '104',
-    'JHARKHAND': '105',
+    'MEGHALAYA': '103',
+    'MIZORAM': '104',
+    'NESA': '16',
   };
   
-  // Popular Operators
-  static const List<String> popularOperators = [
-    'AIRTEL',
-    'VODAFONE',
-    'JIO',
-    'BSNL',
-    'IDEA',
-  ];
+  // Validation methods
+  static bool isValidOperatorCode(String code) {
+    return operatorCodes.containsKey(code);
+  }
+  
+  static bool isValidCircleCode(String code) {
+    return circleCodes.containsKey(code);
+  }
+  
+  static String getOperatorName(String code) {
+    return operatorCodes[code] ?? 'Unknown Operator';
+  }
+  
+  static String getCircleName(String code) {
+    return circleCodes[code] ?? 'Unknown Circle';
+  }
 } 

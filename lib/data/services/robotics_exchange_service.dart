@@ -1,408 +1,376 @@
-import 'package:logger/logger.dart';
-import 'robotics_wallet_service.dart';
-import 'robotics_status_service.dart';
-import '../repositories/recharge_repository.dart';
-import '../models/recharge_request.dart';
+import 'dart:convert';
+import 'dart:math';
+import 'package:http/http.dart' as http;
+import '../models/recharge_models.dart';
+import '../models/operator_info.dart';
+import '../../core/constants/api_constants.dart';
+import 'proxy_service.dart';
 
-/// Comprehensive service for all Robotics Exchange API operations
 class RoboticsExchangeService {
-  static final RoboticsExchangeService _instance = RoboticsExchangeService._internal();
-  factory RoboticsExchangeService() => _instance;
-  RoboticsExchangeService._internal();
+  static const String _baseUrl = 'https://api.roboticexchange.in/Robotics/webservice';
+  static const String _apiMemberId = '3425';
+  static const String _apiPassword = 'Neela@415263';
+  static const String _callbackUrl = 'https://samypay.com/Callback/310';
+  
+  final ProxyService _proxyService;
 
-  final Logger _logger = Logger();
-  final RoboticsWalletService _walletService = RoboticsWalletService();
-  final RoboticsStatusService _statusService = RoboticsStatusService();
-  final RechargeRepository _rechargeRepository = RechargeRepository();
+  RoboticsExchangeService({ProxyService? proxyService}) 
+      : _proxyService = proxyService ?? ProxyService();
 
-  /// Process a mobile recharge using robotics exchange
-  Future<RechargeServiceResult> processRecharge({
-    required String userId,
+  void dispose() {
+    _proxyService.dispose();
+  }
+
+  /// Generate unique transaction ID
+  String _generateTransactionId() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final random = Random().nextInt(999999);
+    return 'TXN${timestamp}_$random';
+  }
+
+  /// Perform mobile recharge
+  Future<RechargeResponse> performRecharge({
     required String mobileNumber,
-    required String operatorCode,
     required String operatorName,
-    required String circle,
-    required double amount,
-    String? planId,
-    String? planDescription,
-    String? validity,
+    required String circleName,
+    required String amount,
+    String? groupId,
   }) async {
     try {
-      _logger.i('Processing recharge with Robotics Exchange: $mobileNumber - ₹$amount');
+      // Map operator and circle names to codes
+      final operatorCode = OperatorMapping.getOperatorCode(operatorName);
+      final circleCode = OperatorMapping.getCircleCode(circleName);
+      final txnId = _generateTransactionId();
 
-      // Check wallet balance before processing
-      final walletBalance = await _walletService.checkWalletBalance();
-      if (!walletBalance.success) {
-        return RechargeServiceResult(
-          success: false,
-          message: 'Failed to check wallet balance: ${walletBalance.message}',
-          transactionId: null,
-          status: 'FAILED',
-          timestamp: DateTime.now(),
-        );
-      }
+      // Build query parameters
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+        'Mobile_no': mobileNumber,
+        'Operator_code': operatorCode,
+        'Amount': amount,
+        'Member_request_txnid': txnId,
+        'Circle': circleCode,
+        if (groupId != null) 'Group_Id': groupId,
+      };
 
-      if (walletBalance.buyerBalance < amount) {
-        return RechargeServiceResult(
-          success: false,
-          message: 'Insufficient wallet balance. Available: ₹${walletBalance.buyerBalance.toStringAsFixed(2)}',
-          transactionId: null,
-          status: 'FAILED',
-          timestamp: DateTime.now(),
-        );
-      }
+      print('Recharge Request - Endpoint: /GetMobileRecharge');
+      print('Recharge Request - Params: $queryParams');
 
-      // Create recharge request
-      final request = RechargeRequest(
-        userId: userId,
-        mobile: mobileNumber,
-        operatorCode: operatorCode,
-        operatorType: _mapOperatorCode(operatorCode),
-        serviceType: ServiceType.prepaid,
-        amount: amount,
-        circle: circle,
-        planId: planId,
-        additionalParams: {
-          'operatorName': operatorName,
-          'planDescription': planDescription ?? '',
-          'validity': validity ?? '',
-        },
-        requestId: 'RBX_${DateTime.now().millisecondsSinceEpoch}_${mobileNumber.substring(mobileNumber.length - 4)}',
-        timestamp: DateTime.now(),
+      final response = await _proxyService.getRoboticsExchange(
+        '/GetMobileRecharge',
+        queryParameters: queryParams,
       );
 
-      // Process recharge
-      final response = await _rechargeRepository.processRecharge(request);
+      print('Recharge Response Status: ${response.statusCode}');
+      print('Recharge Response Body: ${response.body}');
 
-      return RechargeServiceResult(
-        success: response.status == 'SUCCESS',
-        message: response.message,
-        transactionId: response.transactionId,
-        status: response.status,
-        timestamp: response.timestamp,
-        amount: response.amount,
-        operatorTransactionId: response.operatorTransactionId,
-        balanceAfter: response.balance,
-        additionalData: response.additionalData,
-      );
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return RechargeResponse.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to perform recharge: ${response.statusCode}');
+      }
     } catch (e) {
-      _logger.e('Error processing recharge: $e');
-      return RechargeServiceResult(
-        success: false,
-        message: 'Recharge failed: ${e.toString()}',
-        transactionId: null,
-        status: 'FAILED',
-        timestamp: DateTime.now(),
-      );
+      print('Error in performRecharge: $e');
+      throw Exception('Recharge failed: $e');
     }
   }
 
   /// Check recharge status
-  Future<RechargeServiceResult> checkRechargeStatus(String memberRequestTxnId) async {
+  Future<StatusCheckResponse> checkRechargeStatus({
+    required String memberRequestTxnId,
+  }) async {
     try {
-      final response = await _statusService.checkRechargeStatus(memberRequestTxnId);
-      
-      return RechargeServiceResult(
-        success: response.success,
-        message: response.message,
-        transactionId: response.orderId,
-        status: response.rechargeStatus,
-        timestamp: response.timestamp,
-        amount: response.amount,
-        operatorTransactionId: response.operatorTransactionId,
-        balanceAfter: response.closingBalance,
-        additionalData: response.toJson(),
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+        'Member_request_txnid': memberRequestTxnId,
+      };
+
+      print('Status Check Request - Endpoint: /GetStatus');
+      print('Status Check Request - Params: $queryParams');
+
+      final response = await _proxyService.getRoboticsExchange(
+        '/GetStatus',
+        queryParameters: queryParams,
       );
+
+      print('Status Check Response Status: ${response.statusCode}');
+      print('Status Check Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return StatusCheckResponse.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to check status: ${response.statusCode}');
+      }
     } catch (e) {
-      _logger.e('Error checking recharge status: $e');
-      return RechargeServiceResult(
-        success: false,
-        message: 'Status check failed: ${e.toString()}',
-        transactionId: memberRequestTxnId,
-        status: 'UNKNOWN',
-        timestamp: DateTime.now(),
-      );
+      print('Error in checkRechargeStatus: $e');
+      throw Exception('Status check failed: $e');
     }
   }
 
   /// Get wallet balance
-  Future<WalletBalanceResult> getWalletBalance() async {
+  Future<WalletBalanceResponse> getWalletBalance() async {
     try {
-      final response = await _walletService.checkWalletBalance();
-      
-      return WalletBalanceResult(
-        success: response.success,
-        message: response.message,
-        buyerBalance: response.buyerBalance,
-        sellerBalance: response.sellerBalance,
-        timestamp: response.timestamp,
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+      };
+
+      print('Wallet Balance Request - Endpoint: /GetWalletBalance');
+      print('Wallet Balance Request - Params: $queryParams');
+
+      final response = await _proxyService.getRoboticsExchange(
+        '/GetWalletBalance',
+        queryParameters: queryParams,
       );
+
+      print('Wallet Balance Response Status: ${response.statusCode}');
+      print('Wallet Balance Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return WalletBalanceResponse.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to get wallet balance: ${response.statusCode}');
+      }
     } catch (e) {
-      _logger.e('Error getting wallet balance: $e');
-      return WalletBalanceResult(
-        success: false,
-        message: 'Failed to get wallet balance: ${e.toString()}',
-        buyerBalance: 0.0,
-        sellerBalance: 0.0,
-        timestamp: DateTime.now(),
-      );
+      print('Error in getWalletBalance: $e');
+      throw Exception('Wallet balance check failed: $e');
     }
   }
 
-  /// Get operator balances
-  Future<OperatorBalanceResult> getOperatorBalances() async {
+  /// Get operator balance
+  Future<OperatorBalanceResponse> getOperatorBalance() async {
     try {
-      final response = await _walletService.checkOperatorBalances();
-      
-      return OperatorBalanceResult(
-        success: response.success,
-        message: response.message,
-        balances: response.balances,
-        timestamp: response.timestamp,
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+      };
+
+      print('Operator Balance Request - Endpoint: /OperatorBalance');
+      print('Operator Balance Request - Params: $queryParams');
+
+      final response = await _proxyService.getRoboticsExchange(
+        '/OperatorBalance',
+        queryParameters: queryParams,
       );
+
+      print('Operator Balance Response Status: ${response.statusCode}');
+      print('Operator Balance Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return OperatorBalanceResponse.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to get operator balance: ${response.statusCode}');
+      }
     } catch (e) {
-      _logger.e('Error getting operator balances: $e');
-      return OperatorBalanceResult(
-        success: false,
-        message: 'Failed to get operator balances: ${e.toString()}',
-        balances: {},
-        timestamp: DateTime.now(),
-      );
+      print('Error in getOperatorBalance: $e');
+      throw Exception('Operator balance check failed: $e');
     }
   }
 
-  /// File a complaint for failed recharge
-  Future<ComplaintResult> fileComplaint({
+  /// Submit recharge complaint
+  Future<RechargeComplaintResponse> submitRechargeComplaint({
     required String memberRequestTxnId,
     required String ourRefTxnId,
     required String complaintReason,
   }) async {
     try {
-      final response = await _statusService.fileRechargeComplaint(
-        memberRequestTxnId: memberRequestTxnId,
-        ourRefTxnId: ourRefTxnId,
-        complaintReason: complaintReason,
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+        'Member_request_txnid': memberRequestTxnId,
+        'OurRefTxnId': ourRefTxnId,
+        'ComplaintReason': complaintReason,
+      };
+
+      print('Recharge Complaint Request - Endpoint: /RechargeComplaint');
+      print('Recharge Complaint Request - Params: $queryParams');
+
+      final response = await _proxyService.getRoboticsExchange(
+        '/RechargeComplaint',
+        queryParameters: queryParams,
       );
-      
-      return ComplaintResult(
-        success: response.success,
-        message: response.message,
-        memberRequestId: response.memberRequestId,
-        timestamp: response.timestamp,
-      );
+
+      print('Recharge Complaint Response Status: ${response.statusCode}');
+      print('Recharge Complaint Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return RechargeComplaintResponse.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to submit complaint: ${response.statusCode}');
+      }
     } catch (e) {
-      _logger.e('Error filing complaint: $e');
-      return ComplaintResult(
-        success: false,
-        message: 'Failed to file complaint: ${e.toString()}',
-        memberRequestId: null,
-        timestamp: DateTime.now(),
-      );
+      print('Error in submitRechargeComplaint: $e');
+      throw Exception('Complaint submission failed: $e');
     }
   }
 
-  /// Check lapu balance for operator
-  Future<LapuBalanceResult> checkLapuBalance(String operatorCode) async {
+  /// Update IP address for auto IP update
+  Future<bool> updateIpAddress(String ipAddress) async {
     try {
-      final response = await _walletService.checkLapuBalance(operatorCode);
-      
-      return LapuBalanceResult(
-        success: response.success,
-        message: response.message,
-        lapuData: response.lapuData,
-        timestamp: response.timestamp,
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+        'Ipaddress': ipAddress,
+      };
+
+      print('IP Update Request - Endpoint: /GetIpUpdate');
+      print('IP Update Request - Params: $queryParams');
+
+      final response = await _proxyService.getRoboticsExchange(
+        '/GetIpUpdate',
+        queryParameters: queryParams,
       );
+
+      print('IP Update Response Status: ${response.statusCode}');
+      print('IP Update Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return jsonData['status'] == 1;
+      } else {
+        return false;
+      }
     } catch (e) {
-      _logger.e('Error checking lapu balance: $e');
-      return LapuBalanceResult(
-        success: false,
-        message: 'Failed to check lapu balance: ${e.toString()}',
-        lapuData: [],
-        timestamp: DateTime.now(),
-      );
+      print('Error in updateIpAddress: $e');
+      return false;
     }
   }
 
-  /// Update IP address
-  Future<IpUpdateResult> updateIpAddress(String ipAddress) async {
+  /// Get LAPU wise balance (for Airtel and Idea)
+  Future<Map<String, dynamic>?> getLapuWiseBalance(String operatorCode) async {
     try {
-      final response = await _walletService.updateIpAddress(ipAddress);
-      
-      return IpUpdateResult(
-        success: response.success,
-        message: response.message,
-        timestamp: response.timestamp,
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+        'Operator_code': operatorCode,
+      };
+
+      print('LAPU Balance Request - Endpoint: /GetLapuWiseBal');
+      print('LAPU Balance Request - Params: $queryParams');
+
+      final response = await _proxyService.getRoboticsExchange(
+        '/GetLapuWiseBal',
+        queryParameters: queryParams,
       );
+
+      print('LAPU Balance Response Status: ${response.statusCode}');
+      print('LAPU Balance Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return jsonData;
+      } else {
+        return null;
+      }
     } catch (e) {
-      _logger.e('Error updating IP address: $e');
-      return IpUpdateResult(
-        success: false,
-        message: 'Failed to update IP address: ${e.toString()}',
-        timestamp: DateTime.now(),
-      );
+      print('Error in getLapuWiseBalance: $e');
+      return null;
     }
   }
 
-  /// Check service health
-  Future<ServiceHealthResult> checkServiceHealth() async {
+  /// Check LAPU purchase (for Airtel and Idea)
+  Future<Map<String, dynamic>?> checkLapuPurchase({
+    required String lapuNumber,
+    required String operatorCode,
+  }) async {
     try {
-      final walletCheck = await _walletService.checkWalletBalance();
-      final operatorCheck = await _walletService.checkOperatorBalances();
-      
-      final isHealthy = walletCheck.success && operatorCheck.success;
-      
-      return ServiceHealthResult(
-        isHealthy: isHealthy,
-        message: isHealthy ? 'Service is healthy' : 'Service has issues',
-        walletServiceOk: walletCheck.success,
-        operatorServiceOk: operatorCheck.success,
-        timestamp: DateTime.now(),
-        details: {
-          'walletService': walletCheck.message,
-          'operatorService': operatorCheck.message,
-        },
+      final queryParams = {
+        'Apimember_id': _apiMemberId,
+        'Api_password': _apiPassword,
+        'LapuNumber': lapuNumber,
+        'Operator_code': operatorCode,
+      };
+
+      print('LAPU Purchase Request - Endpoint: /GetPurchase');
+      print('LAPU Purchase Request - Params: $queryParams');
+
+      final response = await _proxyService.getRoboticsExchange(
+        '/GetPurchase',
+        queryParameters: queryParams,
       );
+
+      print('LAPU Purchase Response Status: ${response.statusCode}');
+      print('LAPU Purchase Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        return jsonData;
+      } else {
+        return null;
+      }
     } catch (e) {
-      _logger.e('Error checking service health: $e');
-      return ServiceHealthResult(
-        isHealthy: false,
-        message: 'Health check failed: ${e.toString()}',
-        walletServiceOk: false,
-        operatorServiceOk: false,
-        timestamp: DateTime.now(),
-        details: {'error': e.toString()},
-      );
+      print('Error in checkLapuPurchase: $e');
+      return null;
     }
   }
 
-  /// Helper method to map operator code to enum
-  OperatorType _mapOperatorCode(String operatorCode) {
-    switch (operatorCode.toUpperCase()) {
-      case 'AIRTEL':
-        return OperatorType.airtel;
-      case 'JIO':
-        return OperatorType.jio;
-      case 'VODAFONE':
-      case 'VI':
-      case 'IDEA':
-        return OperatorType.vi;
-      case 'BSNL':
-        return OperatorType.bsnl;
-      default:
-        return OperatorType.airtel;
+  /// Perform recharge with OperatorInfo object
+  Future<RechargeResponse> performRechargeWithOperatorInfo({
+    required String mobileNumber,
+    required OperatorInfo operatorInfo,
+    required String amount,
+    String? groupId,
+  }) async {
+    return performRecharge(
+      mobileNumber: mobileNumber,
+      operatorName: operatorInfo.operator,
+      circleName: operatorInfo.circle,
+      amount: amount,
+      groupId: groupId,
+    );
+  }
+
+  /// Validate recharge amount
+  bool validateRechargeAmount(String amount) {
+    try {
+      final amountValue = double.parse(amount);
+      return amountValue >= 10 && amountValue <= 25000;
+    } catch (e) {
+      return false;
     }
   }
-}
 
-/// Result classes for unified service interface
-class RechargeServiceResult {
-  final bool success;
-  final String message;
-  final String? transactionId;
-  final String status;
-  final DateTime timestamp;
-  final double? amount;
-  final String? operatorTransactionId;
-  final double? balanceAfter;
-  final Map<String, dynamic>? additionalData;
+  /// Get recharge status from response
+  RechargeStatus getRechargeStatusFromResponse(RechargeResponse response) {
+    if (response.isSuccess) {
+      return RechargeStatus.success;
+    } else if (response.isFailed) {
+      return RechargeStatus.failed;
+    } else if (response.isProcessing) {
+      return RechargeStatus.processing;
+    } else {
+      return RechargeStatus.pending;
+    }
+  }
 
-  RechargeServiceResult({
-    required this.success,
-    required this.message,
-    this.transactionId,
-    required this.status,
-    required this.timestamp,
-    this.amount,
-    this.operatorTransactionId,
-    this.balanceAfter,
-    this.additionalData,
-  });
-}
+  /// Get user-friendly error message
+  String getErrorMessage(String errorCode) {
+    return RechargeErrorCodes.getErrorMessage(errorCode);
+  }
 
-class WalletBalanceResult {
-  final bool success;
-  final String message;
-  final double buyerBalance;
-  final double sellerBalance;
-  final DateTime timestamp;
+  /// Check if operator supports R-offers
+  bool supportsROffers(String operatorName) {
+    final supportedOperators = ['AIRTEL', 'VODAFONEIDEA', 'VI'];
+    return supportedOperators.contains(operatorName.toUpperCase());
+  }
 
-  WalletBalanceResult({
-    required this.success,
-    required this.message,
-    required this.buyerBalance,
-    required this.sellerBalance,
-    required this.timestamp,
-  });
-}
-
-class OperatorBalanceResult {
-  final bool success;
-  final String message;
-  final Map<String, dynamic> balances;
-  final DateTime timestamp;
-
-  OperatorBalanceResult({
-    required this.success,
-    required this.message,
-    required this.balances,
-    required this.timestamp,
-  });
-}
-
-class ComplaintResult {
-  final bool success;
-  final String message;
-  final String? memberRequestId;
-  final DateTime timestamp;
-
-  ComplaintResult({
-    required this.success,
-    required this.message,
-    this.memberRequestId,
-    required this.timestamp,
-  });
-}
-
-class LapuBalanceResult {
-  final bool success;
-  final String message;
-  final List<Map<String, dynamic>> lapuData;
-  final DateTime timestamp;
-
-  LapuBalanceResult({
-    required this.success,
-    required this.message,
-    required this.lapuData,
-    required this.timestamp,
-  });
-}
-
-class IpUpdateResult {
-  final bool success;
-  final String message;
-  final DateTime timestamp;
-
-  IpUpdateResult({
-    required this.success,
-    required this.message,
-    required this.timestamp,
-  });
-}
-
-class ServiceHealthResult {
-  final bool isHealthy;
-  final String message;
-  final bool walletServiceOk;
-  final bool operatorServiceOk;
-  final DateTime timestamp;
-  final Map<String, dynamic> details;
-
-  ServiceHealthResult({
-    required this.isHealthy,
-    required this.message,
-    required this.walletServiceOk,
-    required this.operatorServiceOk,
-    required this.timestamp,
-    required this.details,
-  });
+  /// Get callback URL with parameters
+  String getCallbackUrl({
+    required String status,
+    required String operatorId,
+    required String memberTxnId,
+    required String txnId,
+    required String number,
+    required String amount,
+    required String message,
+  }) {
+    return '$_callbackUrl?status=$status&operatorid=$operatorId&agentid=$memberTxnId&txnid=$txnId&number=$number&amount=$amount&message=${Uri.encodeComponent(message)}';
+  }
 } 
