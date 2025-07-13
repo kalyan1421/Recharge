@@ -21,11 +21,18 @@ class AddMoneyScreen extends StatefulWidget {
 class _AddMoneyScreenState extends State<AddMoneyScreen> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
+  final _purposeController = TextEditingController();
   bool _isLoading = false;
-  String _selectedPaymentMethod = 'UPI';
   
-  final List<String> _paymentMethods = ['UPI', 'Bank Transfer'];
   final List<int> _quickAmounts = [100, 200, 500, 1000, 2000, 5000];
+  final List<String> _quickPurposes = [
+    'Wallet Top-up',
+    'Testing',
+    'Bonus Credit',
+    'Refund',
+    'Promotional Credit',
+    'Manual Addition',
+  ];
 
   @override
   void initState() {
@@ -34,11 +41,14 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     if (widget.suggestedAmount != null) {
       _amountController.text = widget.suggestedAmount!.ceil().toString();
     }
+    // Set default purpose
+    _purposeController.text = 'Wallet Top-up';
   }
 
   @override
   void dispose() {
     _amountController.dispose();
+    _purposeController.dispose();
     super.dispose();
   }
 
@@ -49,19 +59,40 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
 
     try {
       final amount = double.parse(_amountController.text);
+      final purpose = _purposeController.text.trim();
       final walletProvider = context.read<WalletProvider>();
+      final userProvider = context.read<UserProvider>();
       
+      if (userProvider.user == null) {
+        _showErrorSnackBar('User not authenticated');
+        return;
+      }
+
+      // Validate amount range
+      if (amount <= 0) {
+        _showErrorSnackBar('Amount must be greater than 0');
+        return;
+      }
+
+      if (amount > 50000) {
+        _showErrorSnackBar('Maximum amount is ₹50,000');
+        return;
+      }
+
       final success = await walletProvider.addMoney(
         amount: amount,
-        paymentMethod: _selectedPaymentMethod,
-        paymentId: 'DEMO_${DateTime.now().millisecondsSinceEpoch}',
-        orderId: 'ORDER_${DateTime.now().millisecondsSinceEpoch}',
+        purpose: purpose,
+        adminId: 'manual_admin', // For manual additions
+        metadata: {
+          'source': 'add_money_screen',
+          'timestamp': DateTime.now().toIso8601String(),
+        },
       );
 
-      if (success && mounted) {
+      if (success) {
         _showSuccessDialog();
       } else {
-        _showErrorSnackBar(walletProvider.errorMessage);
+        _showErrorSnackBar('Failed to add money to wallet');
       }
     } catch (e) {
       _showErrorSnackBar('Invalid amount entered');
@@ -83,9 +114,23 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
           size: 48,
         ),
         title: const Text('Money Added Successfully!'),
-        content: Text(
-          '₹${_amountController.text} has been added to your wallet.',
-          textAlign: TextAlign.center,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '₹${_amountController.text} has been added to your wallet.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Purpose: ${_purposeController.text}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
         actions: [
           ElevatedButton(
@@ -106,12 +151,24 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         content: Text(message),
         backgroundColor: AppTheme.errorColor,
         behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: Colors.white,
+          onPressed: () {
+            // Retry the addition
+            _addMoney();
+          },
+        ),
       ),
     );
   }
 
   void _setQuickAmount(int amount) {
     _amountController.text = amount.toString();
+  }
+
+  void _setQuickPurpose(String purpose) {
+    _purposeController.text = purpose;
   }
 
   @override
@@ -152,33 +209,184 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF6C63FF).withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Current Balance',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '₹${walletProvider.balance.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (walletProvider.totalAdded > 0) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Total Added',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${walletProvider.totalAdded.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  const Text(
+                                    'Total Spent',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${walletProvider.totalSpent.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Amount Input Section
+                  const Text(
+                    'Enter Amount',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: Column(
                       children: [
-                        // Wallet Icon
-                        Container(
-                          width: 60,
-                          height: 60,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Image.asset(
-                            'assets/images/florid-crypto-wallet-and-online-banking 1.png',
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        
-                        // Balance
-                        Text(
-                          'Wallet Balance: ₹${walletProvider.balance.toStringAsFixed(0)}',
+                        TextFormField(
+                          controller: _amountController,
+                          keyboardType: TextInputType.number,
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
                           ),
+                          decoration: const InputDecoration(
+                            hintText: '0',
+                            prefixText: '₹ ',
+                            prefixStyle: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                            border: InputBorder.none,
+                            hintStyle: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 24,
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter an amount';
+                            }
+                            final amount = double.tryParse(value);
+                            if (amount == null) {
+                              return 'Please enter a valid amount';
+                            }
+                            if (amount <= 0) {
+                              return 'Amount must be greater than 0';
+                            }
+                            if (amount > 50000) {
+                              return 'Maximum amount is ₹50,000';
+                            }
+                            return null;
+                          },
+                        ),
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        
+                        // Quick Amount Buttons
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _quickAmounts.map((amount) {
+                            return GestureDetector(
+                              onTap: () => _setQuickAmount(amount),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: AppTheme.primaryColor.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Text(
+                                  '₹$amount',
+                                  style: TextStyle(
+                                    color: AppTheme.primaryColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         ),
                       ],
                     ),
@@ -186,163 +394,115 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   
                   const SizedBox(height: 24),
                   
-                  // Payment Method Selection
+                  // Purpose Input Section
                   const Text(
-                    'Pay using',
+                    'Purpose',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 18,
                       fontWeight: FontWeight.w600,
                       color: Colors.black87,
                     ),
                   ),
                   const SizedBox(height: 12),
                   
-                  // Payment Methods
-                  Column(
-                    children: _paymentMethods.map((method) {
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _selectedPaymentMethod == method 
-                                ? AppTheme.primaryColor 
-                                : Colors.grey.shade300,
-                            width: 2,
-                          ),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
                         ),
-                        child: RadioListTile<String>(
-                          value: method,
-                          groupValue: _selectedPaymentMethod,
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedPaymentMethod = value!;
-                            });
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _purposeController,
+                          decoration: const InputDecoration(
+                            hintText: 'Enter purpose for adding money',
+                            border: InputBorder.none,
+                            hintStyle: TextStyle(color: Colors.grey),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter a purpose';
+                            }
+                            return null;
                           },
-                          title: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
+                        ),
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        
+                        // Quick Purpose Buttons
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _quickPurposes.map((purpose) {
+                            return GestureDetector(
+                              onTap: () => _setQuickPurpose(purpose),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppTheme.primaryColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: AppTheme.primaryColor.withOpacity(0.3),
+                                  ),
                                 ),
-                                child: Icon(
-                                  method == 'UPI' ? Icons.qr_code : Icons.account_balance,
-                                  color: AppTheme.primaryColor,
-                                  size: 20,
+                                child: Text(
+                                  purpose,
+                                  style: TextStyle(
+                                    color: AppTheme.primaryColor,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    method,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  Text(
-                                    method == 'UPI' 
-                                        ? 'Pay using only Phone Pe, Gpay, Paytm, BHIM, UPI App no any'
-                                        : 'Transfer from your bank account',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade600,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  if (method == 'UPI')
-                                    const Text(
-                                      'Charge Free',
-                                      style: TextStyle(
-                                        color: Colors.green,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
+                            );
+                          }).toList(),
                         ),
-                      );
-                    }).toList(),
+                      ],
+                    ),
                   ),
                   
                   const SizedBox(height: 24),
                   
-                  // Amount Input
-                  TextFormField(
-                    controller: _amountController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Enter Amount',
-                      hintText: 'Min: ₹ 500',
-                      prefixIcon: const Icon(Icons.currency_rupee),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  // Firebase Note
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.blue.shade200,
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppTheme.primaryColor),
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
                     ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter amount';
-                      }
-                      final amount = double.tryParse(value);
-                      if (amount == null) {
-                        return 'Please enter valid amount';
-                      }
-                      if (amount < 500) {
-                        return 'Minimum amount is ₹500';
-                      }
-                      if (amount > 50000) {
-                        return 'Maximum amount is ₹50,000';
-                      }
-                      return null;
-                    },
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Quick Amount Buttons
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _quickAmounts.map((amount) {
-                      return InkWell(
-                        onTap: () => _setQuickAmount(amount),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.blue.shade600,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
                           child: Text(
-                            '₹$amount',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
+                            'This is a manual wallet addition. In a production environment, this would be integrated with a payment gateway.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue.shade800,
                             ),
                           ),
                         ),
-                      );
-                    }).toList(),
+                      ],
+                    ),
                   ),
                   
                   const SizedBox(height: 32),
@@ -350,7 +510,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   // Add Money Button
                   SizedBox(
                     width: double.infinity,
-                    height: 50,
+                    height: 56,
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _addMoney,
                       style: ElevatedButton.styleFrom(
@@ -359,6 +519,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
+                        elevation: 0,
                       ),
                       child: _isLoading
                           ? const SizedBox(
@@ -369,14 +530,33 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Text(
-                              'Add Money',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add, size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Add Money to Wallet',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                     ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Terms Note
+                  Text(
+                    'This is a Firebase-only wallet system for development and testing purposes.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),

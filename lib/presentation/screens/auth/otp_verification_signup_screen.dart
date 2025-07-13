@@ -46,7 +46,7 @@ class _OtpVerificationSignupScreenState extends State<OtpVerificationSignupScree
     setState(() => _isLoading = true);
 
     try {
-      final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<AuthProvider>();
       
       // First try normal verification
       bool success = await authProvider.verifyOtpWithRetry(_otpCode);
@@ -60,19 +60,19 @@ class _OtpVerificationSignupScreenState extends State<OtpVerificationSignupScree
         }
       }
 
-      if (mounted) {
-        setState(() => _isLoading = false);
-        
-        if (success) {
-          // Check auth state to determine next step
-          if (authProvider.authState == AuthState.otpVerified) {
-            // Navigate to registration forms for new users
-            GoRouter.of(context).pushNamed('registration', extra: widget.phoneNumber);
-          } else if (authProvider.authState == AuthState.authenticated) {
-            // Navigate to home for existing users
-            GoRouter.of(context).goNamed('home');
-          }
-        } else {
+    if (mounted) {
+      setState(() => _isLoading = false);
+      
+      if (success) {
+        // Check auth state to determine next step
+        if (authProvider.authState == AuthState.otpVerified) {
+          // Navigate to registration forms for new users
+          GoRouter.of(context).pushNamed('registration', extra: widget.phoneNumber);
+        } else if (authProvider.authState == AuthState.authenticated) {
+          // Navigate to home for existing users
+          GoRouter.of(context).goNamed('home');
+        }
+      } else {
           String errorMessage = authProvider.errorMessage ?? 'OTP verification failed';
           
           // Provide more user-friendly error messages

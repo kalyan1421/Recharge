@@ -77,3 +77,47 @@ Map<String, dynamic> _$ROfferItemToJson(ROfferItem instance) =>
       'logdesc': instance.logDescription,
       'commissionAmount': instance.commissionAmount,
     };
+
+RechargeStatusResponse _$RechargeStatusResponseFromJson(
+        Map<String, dynamic> json) =>
+    RechargeStatusResponse(
+      error: json['ERROR'] as String,
+      status: json['STATUS'] as String,
+      mobileNo: json['MOBILENO'] as String,
+      message: json['MESSAGE'] as String,
+      amount: json['Amount'] as String?,
+      rechargeDate: json['RechargeDate'] as String?,
+    );
+
+Map<String, dynamic> _$RechargeStatusResponseToJson(
+        RechargeStatusResponse instance) =>
+    <String, dynamic>{
+      'ERROR': instance.error,
+      'STATUS': instance.status,
+      'MOBILENO': instance.mobileNo,
+      'MESSAGE': instance.message,
+      'Amount': instance.amount,
+      'RechargeDate': instance.rechargeDate,
+    };
+
+RechargeExpiryResponse _$RechargeExpiryResponseFromJson(
+        Map<String, dynamic> json) =>
+    RechargeExpiryResponse(
+      error: json['ERROR'] as String,
+      status: json['STATUS'] as String,
+      mobileNo: json['MOBILENO'] as String,
+      message: json['MESSAGE'] as String,
+      outgoing: json['OUTGOING'] as String?,
+      incoming: json['INCOMING'] as String?,
+    );
+
+Map<String, dynamic> _$RechargeExpiryResponseToJson(
+        RechargeExpiryResponse instance) =>
+    <String, dynamic>{
+      'ERROR': instance.error,
+      'STATUS': instance.status,
+      'MOBILENO': instance.mobileNo,
+      'MESSAGE': instance.message,
+      'OUTGOING': instance.outgoing,
+      'INCOMING': instance.incoming,
+    };

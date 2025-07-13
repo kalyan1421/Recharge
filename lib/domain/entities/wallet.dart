@@ -1,174 +1,121 @@
-enum UserTier { basic, silver, gold, platinum }
-enum KYCStatus { pending, verified, rejected }
-enum PaymentMethod { upi, card, netbanking, wallet }
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class User {
+/// Firebase-only wallet entity
+class Wallet {
+  final String id;
   final String userId;
-  final String phoneNumber;
-  final String? email;
-  final String? name;
+  final double balance;
+  final double totalAdded;
+  final double totalSpent;
   final DateTime createdAt;
-  final DateTime? lastLoginAt;
+  final DateTime updatedAt;
   final bool isActive;
-  final UserTier tier;
-  final KYCStatus kycStatus;
-  final String? referralCode;
-  final String? referredBy;
   final Map<String, dynamic> metadata;
 
-  const User({
+  const Wallet({
+    required this.id,
     required this.userId,
-    required this.phoneNumber,
-    this.email,
-    this.name,
+    required this.balance,
+    this.totalAdded = 0.0,
+    this.totalSpent = 0.0,
     required this.createdAt,
-    this.lastLoginAt,
+    required this.updatedAt,
     this.isActive = true,
-    this.tier = UserTier.basic,
-    this.kycStatus = KYCStatus.pending,
-    this.referralCode,
-    this.referredBy,
     this.metadata = const {},
   });
 
-  Map<String, dynamic> toJson() {
+  /// Create wallet from Firestore document
+  factory Wallet.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    
+    return Wallet(
+      id: doc.id,
+      userId: data['userId'] ?? '',
+      balance: (data['balance'] ?? 0.0).toDouble(),
+      totalAdded: (data['totalAdded'] ?? 0.0).toDouble(),
+      totalSpent: (data['totalSpent'] ?? 0.0).toDouble(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      isActive: data['isActive'] ?? true,
+      metadata: data['metadata'] ?? {},
+    );
+  }
+
+  /// Convert to Firestore document
+  Map<String, dynamic> toFirestore() {
     return {
       'userId': userId,
-      'phoneNumber': phoneNumber,
-      'email': email,
-      'name': name,
-      'createdAt': createdAt.toIso8601String(),
-      'lastLoginAt': lastLoginAt?.toIso8601String(),
+      'balance': balance,
+      'totalAdded': totalAdded,
+      'totalSpent': totalSpent,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
       'isActive': isActive,
-      'tier': tier.toString().split('.').last,
-      'kycStatus': kycStatus.toString().split('.').last,
-      'referralCode': referralCode,
-      'referredBy': referredBy,
       'metadata': metadata,
     };
   }
 
-  factory User.fromJson(Map<String, dynamic> json) {
-    return User(
-      userId: json['userId'] ?? '',
-      phoneNumber: json['phoneNumber'] ?? '',
-      email: json['email'],
-      name: json['name'],
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      lastLoginAt: json['lastLoginAt'] != null ? DateTime.parse(json['lastLoginAt']) : null,
-      isActive: json['isActive'] ?? true,
-      tier: UserTier.values.firstWhere(
-        (e) => e.toString() == 'UserTier.${json['tier']}',
-        orElse: () => UserTier.basic,
-      ),
-      kycStatus: KYCStatus.values.firstWhere(
-        (e) => e.toString() == 'KYCStatus.${json['kycStatus']}',
-        orElse: () => KYCStatus.pending,
-      ),
-      referralCode: json['referralCode'],
-      referredBy: json['referredBy'],
-      metadata: json['metadata'] ?? {},
-    );
-  }
-}
-
-class Wallet {
-  final String id;
-  final String walletId;
-  final String userId;
-  final double balance;
-  final double blockedAmount;
-  final double minBalance;
-  final double dailyLimit;
-  final double monthlyLimit;
-  final double dailyUsed;
-  final double monthlyUsed;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final bool isActive;
-
-  const Wallet({
-    String? id,
-    required this.walletId,
-    required this.userId,
-    required this.balance,
-    this.blockedAmount = 0.0,
-    this.minBalance = 10.0,
-    this.dailyLimit = 5000.0,
-    this.monthlyLimit = 50000.0,
-    this.dailyUsed = 0.0,
-    this.monthlyUsed = 0.0,
-    required this.createdAt,
-    required this.updatedAt,
-    this.isActive = true,
-  }) : id = id ?? walletId;
-
   /// Copy with new values
   Wallet copyWith({
     String? id,
-    String? walletId,
     String? userId,
     double? balance,
-    double? blockedAmount,
-    double? minBalance,
-    double? dailyLimit,
-    double? monthlyLimit,
-    double? dailyUsed,
-    double? monthlyUsed,
+    double? totalAdded,
+    double? totalSpent,
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isActive,
+    Map<String, dynamic>? metadata,
   }) {
     return Wallet(
       id: id ?? this.id,
-      walletId: walletId ?? this.walletId,
       userId: userId ?? this.userId,
       balance: balance ?? this.balance,
-      blockedAmount: blockedAmount ?? this.blockedAmount,
-      minBalance: minBalance ?? this.minBalance,
-      dailyLimit: dailyLimit ?? this.dailyLimit,
-      monthlyLimit: monthlyLimit ?? this.monthlyLimit,
-      dailyUsed: dailyUsed ?? this.dailyUsed,
-      monthlyUsed: monthlyUsed ?? this.monthlyUsed,
+      totalAdded: totalAdded ?? this.totalAdded,
+      totalSpent: totalSpent ?? this.totalSpent,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isActive: isActive ?? this.isActive,
+      metadata: metadata ?? this.metadata,
     );
   }
 
+  /// Get available balance
+  double get availableBalance => balance;
+
+  /// Check if wallet has sufficient balance
+  bool hasSufficientBalance(double amount) => balance >= amount;
+
+  /// Get formatted balance string
+  String get formattedBalance => '₹${balance.toStringAsFixed(2)}';
+
+  /// Convert to JSON for API calls
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'walletId': walletId,
       'userId': userId,
       'balance': balance,
-      'blockedAmount': blockedAmount,
-      'minBalance': minBalance,
-      'dailyLimit': dailyLimit,
-      'monthlyLimit': monthlyLimit,
-      'dailyUsed': dailyUsed,
-      'monthlyUsed': monthlyUsed,
+      'totalAdded': totalAdded,
+      'totalSpent': totalSpent,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'isActive': isActive,
+      'metadata': metadata,
     };
   }
 
+  /// Create from JSON
   factory Wallet.fromJson(Map<String, dynamic> json) {
     return Wallet(
-      id: json['id'],
-      walletId: json['walletId'] ?? '',
+      id: json['id'] ?? '',
       userId: json['userId'] ?? '',
       balance: (json['balance'] ?? 0.0).toDouble(),
-      blockedAmount: (json['blockedAmount'] ?? 0.0).toDouble(),
-      minBalance: (json['minBalance'] ?? 10.0).toDouble(),
-      dailyLimit: (json['dailyLimit'] ?? 5000.0).toDouble(),
-      monthlyLimit: (json['monthlyLimit'] ?? 50000.0).toDouble(),
-      dailyUsed: (json['dailyUsed'] ?? 0.0).toDouble(),
-      monthlyUsed: (json['monthlyUsed'] ?? 0.0).toDouble(),
+      totalAdded: (json['totalAdded'] ?? 0.0).toDouble(),
+      totalSpent: (json['totalSpent'] ?? 0.0).toDouble(),
       createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
       updatedAt: DateTime.parse(json['updatedAt'] ?? DateTime.now().toIso8601String()),
       isActive: json['isActive'] ?? true,
+      metadata: json['metadata'] ?? {},
     );
   }
 } 

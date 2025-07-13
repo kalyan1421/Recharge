@@ -17,17 +17,17 @@ class PlanCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 2,
       child: InkWell(
-        onTap: onTap,
+      onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               // Price Circle
               Container(
                 width: 60,
                 height: 60,
-                decoration: BoxDecoration(
+        decoration: BoxDecoration(
                   color: Colors.blue,
                   borderRadius: BorderRadius.circular(30),
                 ),
@@ -46,37 +46,37 @@ class PlanCard extends StatelessWidget {
                       Text(
                         plan.priceString,
                         style: const TextStyle(
-                          color: Colors.white,
+          color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+          ),
+            ),
+          ],
+        ),
                 ),
               ),
               const SizedBox(width: 16),
               // Plan Details
               Expanded(
-                child: Column(
+        child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Validity
                     if (plan.validity.isNotEmpty && plan.validity != 'NA')
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
                           color: Colors.green.shade100,
                           borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
+                      ),
+                      child: Text(
                           plan.validity,
                           style: TextStyle(
                             color: Colors.green.shade800,
-                            fontSize: 12,
+                          fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -87,8 +87,8 @@ class PlanCard extends StatelessWidget {
                       plan.desc,
                       style: const TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
+                          fontWeight: FontWeight.w500,
+                        ),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -96,15 +96,15 @@ class PlanCard extends StatelessWidget {
                 ),
               ),
               // Select Button
-              Container(
-                padding: const EdgeInsets.symmetric(
+                  Container(
+                    padding: const EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
                   color: Colors.blue,
                   borderRadius: BorderRadius.circular(20),
-                ),
+                    ),
                 child: const Text(
                   'Select',
                   style: TextStyle(
@@ -115,7 +115,7 @@ class PlanCard extends StatelessWidget {
                 ),
               ),
             ],
-          ),
+            ),
         ),
       ),
     );

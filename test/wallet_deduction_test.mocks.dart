@@ -913,6 +913,88 @@ class MockRoboticsExchangeService extends _i1.Mock
           ),
         ),
       ) as String);
+
+  @override
+  _i5.Future<bool> isLapuActive(String? operatorCode) => (super.noSuchMethod(
+        Invocation.method(
+          #isLapuActive,
+          [operatorCode],
+        ),
+        returnValue: _i5.Future<bool>.value(false),
+      ) as _i5.Future<bool>);
+
+  @override
+  _i5.Future<String?> getActiveLapuNumber(String? operatorCode) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getActiveLapuNumber,
+          [operatorCode],
+        ),
+        returnValue: _i5.Future<String?>.value(),
+      ) as _i5.Future<String?>);
+
+  @override
+  _i5.Future<_i6.RechargeResponse> performRechargeWithLapuCheck({
+    required String? mobileNumber,
+    required String? operatorName,
+    required String? circleName,
+    required String? amount,
+    String? groupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #performRechargeWithLapuCheck,
+          [],
+          {
+            #mobileNumber: mobileNumber,
+            #operatorName: operatorName,
+            #circleName: circleName,
+            #amount: amount,
+            #groupId: groupId,
+          },
+        ),
+        returnValue:
+            _i5.Future<_i6.RechargeResponse>.value(_FakeRechargeResponse_9(
+          this,
+          Invocation.method(
+            #performRechargeWithLapuCheck,
+            [],
+            {
+              #mobileNumber: mobileNumber,
+              #operatorName: operatorName,
+              #circleName: circleName,
+              #amount: amount,
+              #groupId: groupId,
+            },
+          ),
+        )),
+      ) as _i5.Future<_i6.RechargeResponse>);
+
+  @override
+  _i5.Future<Map<String, dynamic>> getLapuStatusReport() => (super.noSuchMethod(
+        Invocation.method(
+          #getLapuStatusReport,
+          [],
+        ),
+        returnValue:
+            _i5.Future<Map<String, dynamic>>.value(<String, dynamic>{}),
+      ) as _i5.Future<Map<String, dynamic>>);
+
+  @override
+  _i5.Future<bool> hasOperatorBalance(
+    String? operatorCode,
+    double? amount,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #hasOperatorBalance,
+          [
+            operatorCode,
+            amount,
+          ],
+        ),
+        returnValue: _i5.Future<bool>.value(false),
+      ) as _i5.Future<bool>);
 }
 
 /// A class which mocks [DocumentReference].

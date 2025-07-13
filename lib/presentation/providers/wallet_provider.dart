@@ -1,28 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
 import '../../config/firebase_config.dart';
-import '../../core/constants/app_constants.dart';
 import '../../domain/entities/wallet.dart';
 import '../../domain/entities/wallet_transaction.dart';
+import '../../data/repositories/wallet_repository.dart';
+import '../../data/services/wallet_service.dart';
 
 enum WalletState { loading, loaded, error }
 
 class WalletProvider extends ChangeNotifier {
   final Logger _logger = Logger();
+  final WalletRepository _walletRepository = WalletRepository();
+  final WalletService _walletService = WalletService();
   
   // State variables
   WalletState _state = WalletState.loading;
-  double _balance = 0.0;
-  double _outstandingBalance = 0.0;
+  Wallet? _wallet;
   List<WalletTransaction> _transactions = [];
   String _errorMessage = '';
   bool _isLoading = false;
   
   // Getters
   WalletState get state => _state;
-  double get balance => _balance;
-  double get outstandingBalance => _outstandingBalance;
+  Wallet? get wallet => _wallet;
+  double get balance => _wallet?.balance ?? 0.0;
+  double get totalAdded => _wallet?.totalAdded ?? 0.0;
+  double get totalSpent => _wallet?.totalSpent ?? 0.0;
   List<WalletTransaction> get transactions => _transactions;
   String get errorMessage => _errorMessage;
   bool get isLoading => _isLoading;
@@ -31,11 +36,14 @@ class WalletProvider extends ChangeNotifier {
   List<WalletTransaction> get recentTransactions => 
       _transactions.take(10).toList();
   
-  List<WalletTransaction> get successfulTransactions => 
-      _transactions.where((t) => t.status == AppConstants.statusSuccess).toList();
+  List<WalletTransaction> get creditTransactions => 
+      _transactions.where((t) => t.type == WalletTransactionType.credit).toList();
+  
+  List<WalletTransaction> get debitTransactions => 
+      _transactions.where((t) => t.type == WalletTransactionType.debit).toList();
   
   List<WalletTransaction> get pendingTransactions => 
-      _transactions.where((t) => t.status == AppConstants.statusPending).toList();
+      _transactions.where((t) => t.status == WalletTransactionStatus.pending).toList();
   
   WalletProvider() {
     _initializeWallet();
@@ -48,289 +56,32 @@ class WalletProvider extends ChangeNotifier {
       loadWalletData(currentUser.uid);
     }
   }
-  
-  /// Load wallet data for user
+
+  /// Load wallet data for a specific user
   Future<void> loadWalletData(String userId) async {
     try {
-      _setLoading(true);
+      _setState(WalletState.loading);
       _clearError();
       
       _logger.i('Loading wallet data for user: $userId');
       
-      // Load wallet balance
-      await _loadWalletBalance(userId);
+      // Load wallet
+      _wallet = await _walletRepository.getWallet(userId);
+      _logger.i('Wallet loaded: balance=₹${_wallet?.balance ?? 0.0}');
       
       // Load transaction history
       await _loadTransactionHistory(userId);
       
-      _state = WalletState.loaded;
-      _logger.i('Wallet data loaded successfully');
+      _setState(WalletState.loaded);
       
-    } catch (e, stackTrace) {
+    } catch (e) {
       _logger.e('Failed to load wallet data: $e');
-      _setError('Failed to load wallet data');
-      _state = WalletState.error;
-    } finally {
-      _setLoading(false);
+      _setError('Failed to load wallet data: $e');
+      _setState(WalletState.error);
     }
   }
-  
-  /// Load wallet balance from Firestore
-  Future<void> _loadWalletBalance(String userId) async {
-    try {
-      final walletDoc = await FirebaseConfig.firestore
-          .collection(AppConstants.walletsCollection)
-          .doc(userId)
-          .get();
-      
-      if (walletDoc.exists) {
-        final data = walletDoc.data()!;
-        _balance = (data['balance'] ?? 0.0).toDouble();
-        _outstandingBalance = (data['outstandingBalance'] ?? 0.0).toDouble();
-      } else {
-        // Create wallet document if it doesn't exist
-        await _createWalletDocument(userId);
-      }
-      
-      _logger.i('Wallet balance loaded: ₹$_balance');
-      
-    } catch (e) {
-      _logger.e('Failed to load wallet balance: $e');
-      throw Exception('Failed to load wallet balance');
-    }
-  }
-  
-  /// Create wallet document for new user
-  Future<void> _createWalletDocument(String userId) async {
-    try {
-      final walletData = {
-        'userId': userId,
-        'balance': 0.0,
-        'outstandingBalance': 0.0,
-        'totalAddedMoney': 0.0,
-        'totalSpentMoney': 0.0,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-      
-      await FirebaseConfig.firestore
-          .collection(AppConstants.walletsCollection)
-          .doc(userId)
-          .set(walletData);
-      
-      _balance = 0.0;
-      _outstandingBalance = 0.0;
-      
-      _logger.i('Wallet document created for user: $userId');
-      
-    } catch (e) {
-      _logger.e('Failed to create wallet document: $e');
-      throw Exception('Failed to create wallet');
-    }
-  }
-  
-  /// Load transaction history
-  Future<void> _loadTransactionHistory(String userId, {int limit = 50}) async {
-    try {
-      final querySnapshot = await FirebaseConfig.firestore
-          .collection(AppConstants.transactionsCollection)
-          .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
-          .limit(limit)
-          .get();
-      
-      _transactions = querySnapshot.docs.map((doc) {
-        return WalletTransaction.fromFirestore(doc);
-      }).toList();
-      
-      _logger.i('Loaded ${_transactions.length} transactions');
-      
-    } catch (e) {
-      _logger.e('Failed to load transaction history: $e');
-      // Don't throw here, wallet balance is more important
-    }
-  }
-  
-  /// Add money to wallet
-  Future<bool> addMoney({
-    required double amount,
-    required String paymentMethod,
-    String? paymentId,
-    String? orderId,
-  }) async {
-    try {
-      final currentUser = FirebaseConfig.currentUser;
-      if (currentUser == null) {
-        _setError('User not authenticated');
-        return false;
-      }
-      
-      _setLoading(true);
-      _clearError();
-      
-      // Validate amount
-      if (amount < AppConstants.minWalletAmount) {
-        _setError('Minimum amount is ₹${AppConstants.minWalletAmount}');
-        return false;
-      }
-      
-      if (amount > AppConstants.maxWalletAmount) {
-        _setError('Maximum amount is ₹${AppConstants.maxWalletAmount}');
-        return false;
-      }
-      
-      _logger.i('Adding ₹$amount to wallet');
-      
-      // Create transaction record
-      final transactionData = {
-        'userId': currentUser.uid,
-        'type': AppConstants.transactionTypeAddMoney,
-        'amount': amount,
-        'paymentMethod': paymentMethod,
-        'paymentId': paymentId,
-        'orderId': orderId,
-        'status': AppConstants.statusPending,
-        'description': 'Money added to wallet',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-      
-      final transactionRef = await FirebaseConfig.firestore
-          .collection(AppConstants.transactionsCollection)
-          .add(transactionData);
-      
-      // For demo purposes, immediately update balance
-      // In production, this would be done after payment verification
-      await _updateWalletBalance(currentUser.uid, amount, isCredit: true);
-      
-      // Update transaction status
-      await transactionRef.update({
-        'status': AppConstants.statusSuccess,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
-      // Reload wallet data
-      await loadWalletData(currentUser.uid);
-      
-      // Log analytics event
-      FirebaseConfig.logEvent('add_money', {
-        'amount': amount,
-        'payment_method': paymentMethod,
-        'user_id': currentUser.uid,
-      });
-      
-      _logger.i('Money added successfully: ₹$amount');
-      return true;
-      
-    } catch (e, stackTrace) {
-      _logger.e('Failed to add money: $e');
-      _setError('Failed to add money. Please try again.');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-  
-  /// Deduct money from wallet
-  Future<bool> deductMoney({
-    required double amount,
-    required String purpose,
-    String? referenceId,
-  }) async {
-    try {
-      final currentUser = FirebaseConfig.currentUser;
-      if (currentUser == null) {
-        _setError('User not authenticated');
-        return false;
-      }
-      
-      _setLoading(true);
-      _clearError();
-      
-      // Check sufficient balance
-      if (_balance < amount) {
-        _setError(AppConstants.errorInsufficientBalance);
-        return false;
-      }
-      
-      _logger.i('Deducting ₹$amount from wallet for: $purpose');
-      
-      // Create transaction record
-      final transactionData = {
-        'userId': currentUser.uid,
-        'type': AppConstants.transactionTypeWithdraw,
-        'amount': -amount,
-        'purpose': purpose,
-        'referenceId': referenceId,
-        'status': AppConstants.statusSuccess,
-        'description': purpose,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-      
-      await FirebaseConfig.firestore
-          .collection(AppConstants.transactionsCollection)
-          .add(transactionData);
-      
-      // Update wallet balance
-      await _updateWalletBalance(currentUser.uid, amount, isCredit: false);
-      
-      // Reload wallet data
-      await loadWalletData(currentUser.uid);
-      
-      _logger.i('Money deducted successfully: ₹$amount');
-      return true;
-      
-    } catch (e, stackTrace) {
-      _logger.e('Failed to deduct money: $e');
-      _setError('Failed to deduct money');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-  
-  /// Update wallet balance in Firestore
-  Future<void> _updateWalletBalance(String userId, double amount, {required bool isCredit}) async {
-    try {
-      final walletRef = FirebaseConfig.firestore
-          .collection(AppConstants.walletsCollection)
-          .doc(userId);
-      
-      await FirebaseConfig.firestore.runTransaction((transaction) async {
-        final walletDoc = await transaction.get(walletRef);
-        
-        if (!walletDoc.exists) {
-          throw Exception('Wallet document not found');
-        }
-        
-        final currentBalance = (walletDoc.data()!['balance'] ?? 0.0).toDouble();
-        final newBalance = isCredit ? currentBalance + amount : currentBalance - amount;
-        
-        if (!isCredit && newBalance < 0) {
-          throw Exception('Insufficient balance');
-        }
-        
-        transaction.update(walletRef, {
-          'balance': newBalance,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      });
-      
-      // Update local balance
-      if (isCredit) {
-        _balance += amount;
-      } else {
-        _balance -= amount;
-      }
-      
-    } catch (e) {
-      _logger.e('Failed to update wallet balance: $e');
-      throw Exception('Failed to update wallet balance');
-    }
-  }
-  
-  /// Refresh wallet data
+
+  /// Refresh wallet data for current user
   Future<void> refresh() async {
     final currentUser = FirebaseConfig.currentUser;
     if (currentUser != null) {
@@ -338,47 +89,300 @@ class WalletProvider extends ChangeNotifier {
     }
   }
   
+  /// Load transaction history
+  Future<void> _loadTransactionHistory(String userId, {int limit = 50}) async {
+    try {
+      _transactions = await _walletRepository.getTransactions(userId, limit: limit);
+      _logger.i('Loaded ${_transactions.length} transactions');
+    } catch (e) {
+      _logger.e('Failed to load transaction history: $e');
+      // Don't throw here, wallet balance is more important
+    }
+  }
+  
+  /// Add money to wallet (admin/manual operation)
+  Future<bool> addMoney({
+    required double amount,
+    required String purpose,
+    String? adminId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final currentUser = FirebaseConfig.currentUser;
+      if (currentUser == null) {
+        _setError('User not authenticated');
+        return false;
+      }
+      
+      _setLoading(true);
+      _clearError();
+      
+      _logger.i('Adding ₹$amount to wallet: $purpose');
+      
+      await _walletService.addMoneyToWallet(
+        userId: currentUser.uid,
+        amount: amount,
+        purpose: purpose,
+        adminId: adminId,
+        metadata: metadata,
+      );
+      
+      // Refresh wallet data after successful addition
+      await loadWalletData(currentUser.uid);
+      _logger.i('Money added successfully');
+      return true;
+      
+    } catch (e) {
+      _logger.e('Error adding money: $e');
+      _setError('Failed to add money: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+  
+  /// Debit money from wallet
+  Future<bool> debitMoney({
+    required double amount,
+    required String purpose,
+    required String transactionId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final currentUser = FirebaseConfig.currentUser;
+      if (currentUser == null) {
+        _setError('User not authenticated');
+        return false;
+      }
+      
+      _setLoading(true);
+      _clearError();
+      
+      _logger.i('Debiting ₹$amount from wallet for: $purpose');
+      
+      final success = await _walletRepository.debitWallet(
+        userId: currentUser.uid,
+        amount: amount,
+        purpose: purpose,
+        transactionId: transactionId,
+        metadata: metadata,
+      );
+      
+      if (success) {
+        // Refresh wallet data after successful debit
+        await loadWalletData(currentUser.uid);
+        _logger.i('Wallet debited successfully');
+      } else {
+        _setError('Insufficient balance');
+      }
+      
+      return success;
+      
+    } catch (e) {
+      _logger.e('Error debiting wallet: $e');
+      _setError('Failed to debit wallet: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+  
+  /// Refund money to wallet
+  Future<bool> refundMoney({
+    required double amount,
+    required String reason,
+    required String originalTransactionId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final currentUser = FirebaseConfig.currentUser;
+      if (currentUser == null) {
+        _setError('User not authenticated');
+        return false;
+      }
+      
+      _setLoading(true);
+      _clearError();
+      
+      _logger.i('Refunding ₹$amount to wallet: $reason');
+      
+      await _walletService.refundToUserWallet(
+        userId: currentUser.uid,
+        originalTransactionId: originalTransactionId,
+        amount: amount,
+        reason: reason,
+        metadata: metadata,
+      );
+      
+      // Refresh wallet data after successful refund
+      await loadWalletData(currentUser.uid);
+      _logger.i('Refund processed successfully');
+      return true;
+      
+    } catch (e) {
+      _logger.e('Error processing refund: $e');
+      _setError('Failed to process refund: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+  
+  /// Check if wallet has sufficient balance
+  bool hasSufficientBalance(double amount) {
+    return (_wallet?.balance ?? 0.0) >= amount;
+  }
+  
+  /// Get wallet balance
+  double getBalance() {
+    return _wallet?.balance ?? 0.0;
+  }
+  
+  /// Get wallet statistics
+  Future<Map<String, dynamic>> getWalletStats() async {
+    try {
+      final currentUser = FirebaseConfig.currentUser;
+      if (currentUser == null) return {};
+      
+      return await _walletService.getWalletStats(currentUser.uid);
+    } catch (e) {
+      _logger.e('Error getting wallet stats: $e');
+      return {};
+    }
+  }
+  
+  /// Stream wallet changes
+  Stream<Wallet?> watchWallet(String userId) {
+    return _walletRepository.walletStream(userId);
+  }
+  
+  /// Stream wallet transactions
+  Stream<List<WalletTransaction>> watchTransactions(String userId, {int limit = 50}) {
+    return _walletRepository.transactionsStream(userId, limit: limit);
+  }
+  
+  /// Get transaction by ID
+  WalletTransaction? getTransactionById(String transactionId) {
+    try {
+      return _transactions.firstWhere(
+        (transaction) => transaction.transactionId == transactionId,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+  
   /// Get transactions by type
-  List<WalletTransaction> getTransactionsByType(String type) {
+  List<WalletTransaction> getTransactionsByType(WalletTransactionType type) {
     return _transactions.where((t) => t.type == type).toList();
   }
   
-  /// Get transactions by date range
-  List<WalletTransaction> getTransactionsByDateRange(DateTime startDate, DateTime endDate) {
-    return _transactions.where((t) {
-      return t.createdAt.isAfter(startDate) && t.createdAt.isBefore(endDate);
-    }).toList();
+  /// Get transactions by status
+  List<WalletTransaction> getTransactionsByStatus(WalletTransactionStatus status) {
+    return _transactions.where((t) => t.status == status).toList();
   }
   
-  /// Calculate total spent amount
-  double get totalSpentAmount {
-    return _transactions
-        .where((t) => t.amount < 0 && t.status == AppConstants.statusSuccess)
-        .fold(0.0, (sum, t) => sum + t.amount.abs());
+  /// Initialize wallet for new user
+  Future<void> initializeWallet(String userId, {double initialBalance = 0.0}) async {
+    try {
+      _setLoading(true);
+      _clearError();
+      
+      await _walletService.initializeUserWallet(userId, initialBalance: initialBalance);
+      await loadWalletData(userId);
+      
+    } catch (e) {
+      _logger.e('Error initializing wallet: $e');
+      _setError('Failed to initialize wallet: $e');
+    } finally {
+      _setLoading(false);
+    }
   }
   
-  /// Calculate total added amount
-  double get totalAddedAmount {
-    return _transactions
-        .where((t) => t.amount > 0 && t.status == AppConstants.statusSuccess)
-        .fold(0.0, (sum, t) => sum + t.amount);
+  /// Process transaction (debit for recharge/payment)
+  Future<bool> processTransaction({
+    required double amount,
+    required String purpose,
+    required String transactionId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final currentUser = FirebaseConfig.currentUser;
+      if (currentUser == null) {
+        _setError('User not authenticated');
+        return false;
+      }
+      
+      // Check if transaction can be processed
+      final canProcess = await _walletService.canProcessTransaction(currentUser.uid, amount);
+      if (!canProcess) {
+        _setError('Insufficient balance for transaction');
+        return false;
+      }
+      
+      return await debitMoney(
+        amount: amount,
+        purpose: purpose,
+        transactionId: transactionId,
+        metadata: metadata,
+      );
+      
+    } catch (e) {
+      _logger.e('Error processing transaction: $e');
+      _setError('Failed to process transaction: $e');
+      return false;
+    }
   }
   
-  /// Set loading state
-  void _setLoading(bool loading) {
-    _isLoading = loading;
+  /// Update transaction status
+  Future<void> updateTransactionStatus({
+    required String transactionId,
+    required WalletTransactionStatus status,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      await _walletService.updateTransactionStatus(
+        transactionId: transactionId,
+        status: status,
+        metadata: metadata,
+      );
+      
+      // Refresh transactions
+      final currentUser = FirebaseConfig.currentUser;
+      if (currentUser != null) {
+        await _loadTransactionHistory(currentUser.uid);
+        notifyListeners();
+      }
+    } catch (e) {
+      _logger.e('Error updating transaction status: $e');
+    }
+  }
+  
+  /// Private helper methods
+  void _setState(WalletState state) {
+    _state = state;
     notifyListeners();
   }
   
-  /// Set error message
   void _setError(String message) {
     _errorMessage = message;
     notifyListeners();
   }
   
-  /// Clear error message
   void _clearError() {
     _errorMessage = '';
     notifyListeners();
+  }
+  
+  void _setLoading(bool loading) {
+    _isLoading = loading;
+    notifyListeners();
+  }
+  
+  @override
+  void dispose() {
+    _walletRepository.dispose();
+    _walletService.dispose();
+    super.dispose();
   }
 } 

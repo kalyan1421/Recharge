@@ -246,16 +246,23 @@ class RechargeComplaintResponse {
 // Operator and Circle mapping classes
 class OperatorMapping {
   static const Map<String, String> operatorCodes = {
+    // Mobile Operators
     'AIRTEL': 'AT',
     'VODAFONEIDEA': 'VI',
-    'JIO': 'JO',
-    'SUN TV': 'SD',
+    'JIO': 'JL',  // Use JIO LITE instead of JIO since JIO LAPU is inactive
     'BSNL': 'BS',
+    'JIO LITE': 'JL',
+    
+    // DTH Operators
     'AIRTEL DTH': 'AD',
     'DISH TV': 'DT',
+    'SUN TV': 'SD',
+    'SUN DIRECT': 'SD',
     'TATASKY': 'TS',
+    'TATA SKY': 'TS',
     'VIDEOCON': 'VD',
-    'JIO LITE': 'JL',
+    'VIDEOCON D2H': 'VD',
+    'RELIANCE BIGTV': 'VD',  // Map to VIDEOCON as similar service
   };
 
   static const Map<String, String> circleCodes = {
@@ -278,7 +285,7 @@ class OperatorMapping {
     'NESA': '16',
     'BIHAR': '52',
     'KARNATAKA': '06',
-    'CHENNAI': '40',
+    'CHENNAI': '20',
     'TAMIL NADU': '94',
     'KERALA': '95',
     'AP': '49',
@@ -286,12 +293,127 @@ class OperatorMapping {
     'JHARKHAND': '20',
   };
 
+  /// Enhanced operator code mapping with fallback patterns
   static String getOperatorCode(String operatorName) {
-    return operatorCodes[operatorName.toUpperCase()] ?? 'AT';
+    // Convert to uppercase for consistent matching
+    final name = operatorName.toUpperCase();
+    
+    // Direct mapping check first
+    if (operatorCodes.containsKey(name)) {
+      return operatorCodes[name]!;
+    }
+    
+    // Pattern matching for variations (prioritize JIO over other operators)
+    if (name.contains('JIO') || name.contains('RELIANCE') || name.contains('RJI') || name.contains('RJIO')) {
+      // Check if it's DTH first
+      if (name.contains('DTH') || name.contains('BIGTV')) {
+        return 'VD'; // RELIANCE BIGTV -> VIDEOCON
+      }
+      // Use JIO LITE instead of JIO since JIO LAPU is inactive
+      return 'JL';
+    } else if (name.contains('AIRTEL')) {
+      // Check if it's DTH
+      if (name.contains('DTH')) {
+        return 'AD';
+      }
+      return 'AT';
+    } else if (name.contains('VODAFONE') || name.contains('IDEA') || name.contains('VI')) {
+      return 'VI';
+    } else if (name.contains('BSNL')) {
+      return 'BS';
+    } else if (name.contains('SUN')) {
+      return 'SD';
+    } else if (name.contains('DISH')) {
+      return 'DT';
+    } else if (name.contains('TATA')) {
+      return 'TS';
+    } else if (name.contains('VIDEOCON')) {
+      return 'VD';
+    }
+    
+    // Default fallback to AIRTEL if no match found
+    print('⚠️ Warning: Unknown operator "$operatorName", defaulting to AIRTEL');
+    return 'AT';
   }
 
   static String getCircleCode(String circleName) {
-    return circleCodes[circleName.toUpperCase()] ?? '10';
+    final upperName = circleName.toUpperCase().trim();
+    
+    // Try exact match first
+    if (circleCodes.containsKey(upperName)) {
+      return circleCodes[upperName]!;
+    }
+    
+    // Try partial match
+    for (final entry in circleCodes.entries) {
+      if (upperName.contains(entry.key) || entry.key.contains(upperName)) {
+        return entry.value;
+      }
+    }
+    
+    // Special cases for common variations
+    if (upperName.contains('DELHI') || upperName.contains('NCR')) {
+      return '10';
+    }
+    if (upperName.contains('MUMBAI') || upperName.contains('BOMBAY')) {
+      return '92';
+    }
+    if (upperName.contains('KOLKATA') || upperName.contains('CALCUTTA')) {
+      return '31';
+    }
+    if (upperName.contains('CHENNAI') || upperName.contains('MADRAS')) {
+      return '40';
+    }
+    if (upperName.contains('BANGALORE') || upperName.contains('BENGALURU')) {
+      return '06';
+    }
+    if (upperName.contains('HYDERABAD') || upperName.contains('TELANGANA')) {
+      return '49';
+    }
+    if (upperName.contains('ANDHRA') || upperName.contains('AP')) {
+      return '49';
+    }
+    
+    // Default to Delhi if not found
+    return '10';
+  }
+
+  /// Determine if an operator is DTH
+  static bool isDthOperator(String operatorName) {
+    final name = operatorName.toUpperCase();
+    return name.contains('DTH') || 
+           name.contains('DISH') ||
+           name.contains('TATA SKY') ||
+           name.contains('TATASKY') ||
+           name.contains('VIDEOCON') ||
+           name.contains('SUN TV') ||
+           name.contains('SUN DIRECT') ||
+           name.contains('BIGTV');
+  }
+
+  /// Determine if an operator is mobile (prepaid/postpaid)
+  static bool isMobileOperator(String operatorName) {
+    final name = operatorName.toUpperCase();
+    return (name.contains('AIRTEL') && !name.contains('DTH')) ||
+           name.contains('JIO') ||
+           name.contains('VODAFONE') ||
+           name.contains('IDEA') ||
+           name.contains('VI') ||
+           name.contains('BSNL') ||
+           name.contains('RELIANCE') && !name.contains('BIGTV');
+  }
+
+  /// Determine plan type based on keywords
+  static String getPlanType(String planName, String description) {
+    final combined = '${planName.toUpperCase()} ${description.toUpperCase()}';
+    
+    if (combined.contains('POSTPAID') || combined.contains('POST PAID')) {
+      return 'postpaid';
+    } else if (combined.contains('DTH') || combined.contains('DISH') || combined.contains('TATASKY')) {
+      return 'dth';
+    } else {
+      return 'prepaid'; // Default to prepaid
+    }
   }
 }
 

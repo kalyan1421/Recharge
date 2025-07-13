@@ -1,276 +1,420 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:logger/logger.dart';
 import '../../domain/entities/wallet.dart';
 import '../../domain/entities/wallet_transaction.dart';
-import '../../core/constants/api_constants.dart';
 
+/// Firebase-only wallet repository
 class WalletRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late Razorpay _razorpay;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final Logger _logger = Logger();
 
-  // Mock implementation for demo
-  static final Map<String, double> _walletBalances = {};
-  static final Map<String, List<WalletTransaction>> _transactions = {};
+  /// Get current user
+  User? get currentUser => _auth.currentUser;
 
-  WalletRepository() {
-    _initializeRazorpay();
-  }
-
-  void _initializeRazorpay() {
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
-  }
-
-  // Get wallet details
-  Future<Wallet?> getWallet(String walletId) async {
+  /// Get wallet for a user
+  Future<Wallet?> getWallet(String userId) async {
     try {
-      final doc = await _firestore.collection('wallets').doc(walletId).get();
+      final doc = await _firestore.collection('wallets').doc(userId).get();
       if (doc.exists) {
-        return _walletFromMap(doc.data()!);
+        return Wallet.fromFirestore(doc);
+      } else {
+        // Create wallet if it doesn't exist
+        return await createWallet(userId);
       }
     } catch (e) {
-      print('Error getting wallet: $e');
+      _logger.e('Error getting wallet: $e');
+      return null;
     }
-    return null;
   }
 
-  // Stream wallet changes
-  Stream<Wallet?> walletStream(String walletId) {
+  /// Create a new wallet for user
+  Future<Wallet> createWallet(String userId) async {
+    try {
+      final now = DateTime.now();
+      final wallet = Wallet(
+        id: userId,
+        userId: userId,
+        balance: 0.0,
+        totalAdded: 0.0,
+        totalSpent: 0.0,
+        createdAt: now,
+        updatedAt: now,
+        isActive: true,
+        metadata: {},
+      );
+
+      await _firestore.collection('wallets').doc(userId).set(wallet.toFirestore());
+      _logger.i('Created new wallet for user: $userId');
+      return wallet;
+    } catch (e) {
+      _logger.e('Error creating wallet: $e');
+      throw Exception('Failed to create wallet');
+    }
+  }
+
+  /// Stream wallet changes
+  Stream<Wallet?> walletStream(String userId) {
     return _firestore
         .collection('wallets')
-        .doc(walletId)
+        .doc(userId)
         .snapshots()
-        .map((doc) => doc.exists ? _walletFromMap(doc.data()!) : null);
+        .map((doc) => doc.exists ? Wallet.fromFirestore(doc) : null);
   }
 
-  // Add money to wallet
-  Future<void> addMoney({
-    required String walletId,
-    required double amount,
-    required PaymentMethod method,
-    required String userId,
-    required Function(String) onSuccess,
-    required Function(String) onError,
-  }) async {
+  /// Get wallet balance
+  Future<double> getBalance(String userId) async {
     try {
-      // Validate amount
-      if (amount < 10 || amount > 50000) {
-        onError('Amount should be between ₹10 and ₹50,000');
-        return;
-      }
-
-      final transactionId = _generateTransactionId();
-
-      switch (method) {
-        case PaymentMethod.upi:
-        case PaymentMethod.card:
-        case PaymentMethod.netbanking:
-          await _processRazorpayPayment(
-            amount: amount,
-            userId: userId,
-            walletId: walletId,
-            transactionId: transactionId,
-            onSuccess: onSuccess,
-            onError: onError,
-          );
-          break;
-        case PaymentMethod.wallet:
-          onError('Cannot add money using wallet');
-          break;
-      }
+      final wallet = await getWallet(userId);
+      return wallet?.balance ?? 0.0;
     } catch (e) {
-      onError('Failed to add money: $e');
+      _logger.e('Error getting balance: $e');
+      return 0.0;
     }
   }
 
-  // Process Razorpay payment
-  Future<void> _processRazorpayPayment({
-    required double amount,
+  /// Add money to wallet (Firebase-only, for admin/manual operations)
+  Future<bool> addMoney({
     required String userId,
-    required String walletId,
-    required String transactionId,
-    required Function(String) onSuccess,
-    required Function(String) onError,
+    required double amount,
+    required String description,
+    String? adminId,
+    Map<String, dynamic>? metadata,
   }) async {
-    var options = {
-      'key': 'rzp_test_your_key_here', // Replace with actual key
-      'amount': (amount * 100).toInt(), // Amount in paise
-      'name': 'SamyPay',
-      'description': 'Add Money to Wallet',
-      'order_id': transactionId,
-      'prefill': {
-        'contact': '', // User's mobile
-        'email': '', // User's email
-      },
-      'theme': {
-        'color': '#6A1B9A'
-      }
-    };
+    if (amount <= 0) {
+      _logger.w('Invalid amount: $amount');
+      return false;
+    }
 
     try {
-      _razorpay.open(options);
+      final result = await _firestore.runTransaction<bool>((transaction) async {
+        // Get current wallet
+        final walletDoc = await transaction.get(
+          _firestore.collection('wallets').doc(userId),
+        );
+
+        if (!walletDoc.exists) {
+          throw Exception('Wallet not found');
+        }
+
+        final wallet = Wallet.fromFirestore(walletDoc);
+        final newBalance = wallet.balance + amount;
+        final newTotalAdded = wallet.totalAdded + amount;
+
+        // Update wallet
+        transaction.update(
+          _firestore.collection('wallets').doc(userId),
+          {
+            'balance': newBalance,
+            'totalAdded': newTotalAdded,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+        );
+
+        // Create transaction record
+        final transactionId = _generateTransactionId();
+        final walletTransaction = WalletTransaction(
+          id: transactionId,
+          transactionId: transactionId,
+          userId: userId,
+          amount: amount,
+          type: WalletTransactionType.credit,
+          status: WalletTransactionStatus.success,
+          description: description,
+          timestamp: DateTime.now(),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          balanceAfter: newBalance,
+          balanceBefore: wallet.balance,
+          metadata: {
+            'adminId': adminId,
+            'operation': 'add_money',
+            ...?metadata,
+          },
+        );
+
+        transaction.set(
+          _firestore.collection('wallet_transactions').doc(transactionId),
+          walletTransaction.toFirestore(),
+        );
+
+        return true;
+      });
+
+      _logger.i('Added ₹$amount to wallet for user: $userId');
+      return result;
     } catch (e) {
-      onError('Payment failed: $e');
+      _logger.e('Error adding money: $e');
+      return false;
     }
   }
 
-  // Debit from wallet
+  /// Debit money from wallet
   Future<bool> debitWallet({
-    required String walletId,
+    required String userId,
     required double amount,
     required String purpose,
     required String transactionId,
+    Map<String, dynamic>? metadata,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    final currentBalance = _walletBalances[walletId] ?? 1000.0;
-    if (currentBalance >= amount) {
-      _walletBalances[walletId] = currentBalance - amount;
-      
-      // Add transaction record
-      final transaction = WalletTransaction(
-        id: transactionId,
-        transactionId: transactionId,
-        userId: 'demo_user', // TODO: Get actual userId
-        amount: amount,
-        type: WalletTransactionType.debit,
-        description: purpose,
-        timestamp: DateTime.now(),
-        status: WalletTransactionStatus.success,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        balanceAfter: currentBalance - amount,
-        balanceBefore: currentBalance,
-      );
-      
-      _transactions.putIfAbsent(walletId, () => []).add(transaction);
-      return true;
+    if (amount <= 0) {
+      _logger.w('Invalid amount: $amount');
+      return false;
     }
-    return false;
+
+    try {
+      final result = await _firestore.runTransaction<bool>((transaction) async {
+        // Get current wallet
+        final walletDoc = await transaction.get(
+          _firestore.collection('wallets').doc(userId),
+        );
+
+        if (!walletDoc.exists) {
+          throw Exception('Wallet not found');
+        }
+
+        final wallet = Wallet.fromFirestore(walletDoc);
+        
+        // Check sufficient balance
+        if (wallet.balance < amount) {
+          _logger.w('Insufficient balance. Required: ₹$amount, Available: ₹${wallet.balance}');
+          return false;
+        }
+
+        final newBalance = wallet.balance - amount;
+        final newTotalSpent = wallet.totalSpent + amount;
+
+        // Update wallet
+        transaction.update(
+          _firestore.collection('wallets').doc(userId),
+          {
+            'balance': newBalance,
+            'totalSpent': newTotalSpent,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+        );
+
+        // Create transaction record
+        final walletTransaction = WalletTransaction(
+          id: transactionId,
+          transactionId: transactionId,
+          userId: userId,
+          amount: amount,
+          type: WalletTransactionType.debit,
+          status: WalletTransactionStatus.success,
+          description: purpose,
+          timestamp: DateTime.now(),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          balanceAfter: newBalance,
+          balanceBefore: wallet.balance,
+          metadata: {
+            'operation': 'debit_wallet',
+            ...?metadata,
+          },
+        );
+
+        transaction.set(
+          _firestore.collection('wallet_transactions').doc(transactionId),
+          walletTransaction.toFirestore(),
+        );
+
+        return true;
+      });
+
+      _logger.i('Debited ₹$amount from wallet for user: $userId');
+      return result;
+    } catch (e) {
+      _logger.e('Error debiting wallet: $e');
+      return false;
+    }
   }
 
-  // Credit to wallet
-  Future<void> creditWallet({
-    required String walletId,
+  /// Refund money to wallet
+  Future<bool> refundWallet({
+    required String userId,
     required double amount,
-    required WalletTransactionType type,
-    required String description,
-    required String transactionId,
+    required String reason,
+    required String originalTransactionId,
+    Map<String, dynamic>? metadata,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    final currentBalance = _walletBalances[walletId] ?? 1000.0;
-    _walletBalances[walletId] = currentBalance + amount;
-    
-    // Add transaction record
-    final transaction = WalletTransaction(
-      id: transactionId,
-      transactionId: transactionId,
-      userId: 'demo_user', // TODO: Get actual userId
-      amount: amount,
-      type: type,
-      description: description,
-      timestamp: DateTime.now(),
-      status: WalletTransactionStatus.success,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-      balanceAfter: currentBalance + amount,
-      balanceBefore: currentBalance,
-    );
-    
-    _transactions.putIfAbsent(walletId, () => []).add(transaction);
-  }
-
-  // Get wallet transactions
-  Future<List<WalletTransaction>> getTransactionHistory(String walletId, {int limit = 20}) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    
-    final history = _transactions[walletId] ?? [];
-    history.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    return history.take(limit).toList();
-  }
-
-  // Payment event handlers
-  void _handlePaymentSuccess(PaymentSuccessResponse response) {
-    print('Payment Success: ${response.paymentId}');
-    // Handle successful payment
-  }
-
-  void _handlePaymentError(PaymentFailureResponse response) {
-    print('Payment Error: ${response.code} - ${response.message}');
-    // Handle payment error
-  }
-
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    print('External Wallet: ${response.walletName}');
-    // Handle external wallet
-  }
-
-  // Helper methods
-  String _generateTransactionId() {
-    return 'TXN${DateTime.now().millisecondsSinceEpoch}';
-  }
-
-  Wallet _walletFromMap(Map<String, dynamic> map) {
-    return Wallet(
-      walletId: map['walletId'] ?? '',
-      userId: map['userId'] ?? '',
-      balance: (map['balance'] ?? 0.0).toDouble(),
-      blockedAmount: (map['blockedAmount'] ?? 0.0).toDouble(),
-      minBalance: (map['minBalance'] ?? 0.0).toDouble(),
-      createdAt: _parseTimestamp(map['createdAt']) ?? DateTime.now(),
-      updatedAt: _parseTimestamp(map['updatedAt']) ?? DateTime.now(),
-      isActive: map['isActive'] ?? true,
-      dailyLimit: (map['dailyLimit'] ?? 25000.0).toDouble(),
-      monthlyLimit: (map['monthlyLimit'] ?? 200000.0).toDouble(),
-      dailyUsed: (map['dailyUsed'] ?? 0.0).toDouble(),
-      monthlyUsed: (map['monthlyUsed'] ?? 0.0).toDouble(),
-    );
-  }
-
-  WalletTransaction _transactionFromMap(Map<String, dynamic> map) {
-    return WalletTransaction(
-      id: map['id'] ?? map['transactionId'] ?? '',
-      transactionId: map['transactionId'] ?? '',
-      userId: map['userId'] ?? '',
-      amount: (map['amount'] ?? 0.0).toDouble(),
-      status: WalletTransactionStatus.values.firstWhere(
-        (e) => e.toString() == 'WalletTransactionStatus.${map['status']}',
-        orElse: () => WalletTransactionStatus.pending,
-      ),
-      type: WalletTransactionType.values.firstWhere(
-        (e) => e.toString() == 'WalletTransactionType.${map['type']}',
-        orElse: () => WalletTransactionType.debit,
-      ),
-      description: map['description'] ?? map['remarks'] ?? '',
-      balanceBefore: (map['balanceBefore'] ?? 0.0).toDouble(),
-      balanceAfter: (map['balanceAfter'] ?? 0.0).toDouble(),
-      timestamp: _parseTimestamp(map['timestamp']) ?? DateTime.now(),
-      createdAt: _parseTimestamp(map['createdAt']) ?? DateTime.now(),
-      updatedAt: _parseTimestamp(map['updatedAt']) ?? DateTime.now(),
-    );
-  }
-
-  DateTime? _parseTimestamp(dynamic timestamp) {
-    if (timestamp == null) return null;
-    if (timestamp is Timestamp) return timestamp.toDate();
-    if (timestamp is DateTime) return timestamp;
-    if (timestamp is String) {
-      try {
-        return DateTime.parse(timestamp);
-      } catch (e) {
-        return null;
-      }
+    if (amount <= 0) {
+      _logger.w('Invalid refund amount: $amount');
+      return false;
     }
-    return null;
+
+    try {
+      final result = await _firestore.runTransaction<bool>((transaction) async {
+        // Get current wallet
+        final walletDoc = await transaction.get(
+          _firestore.collection('wallets').doc(userId),
+        );
+
+        if (!walletDoc.exists) {
+          throw Exception('Wallet not found');
+        }
+
+        final wallet = Wallet.fromFirestore(walletDoc);
+        final newBalance = wallet.balance + amount;
+
+        // Update wallet
+        transaction.update(
+          _firestore.collection('wallets').doc(userId),
+          {
+            'balance': newBalance,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+        );
+
+        // Create refund transaction record
+        final refundTransactionId = _generateTransactionId();
+        final walletTransaction = WalletTransaction(
+          id: refundTransactionId,
+          transactionId: refundTransactionId,
+          userId: userId,
+          amount: amount,
+          type: WalletTransactionType.refund,
+          status: WalletTransactionStatus.success,
+          description: 'Refund: $reason',
+          timestamp: DateTime.now(),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          balanceAfter: newBalance,
+          balanceBefore: wallet.balance,
+          reference: originalTransactionId,
+          metadata: {
+            'operation': 'refund_wallet',
+            'original_transaction': originalTransactionId,
+            'refund_reason': reason,
+            ...?metadata,
+          },
+        );
+
+        transaction.set(
+          _firestore.collection('wallet_transactions').doc(refundTransactionId),
+          walletTransaction.toFirestore(),
+        );
+
+        return true;
+      });
+
+      _logger.i('Refunded ₹$amount to wallet for user: $userId');
+      return result;
+    } catch (e) {
+      _logger.e('Error refunding wallet: $e');
+      return false;
+    }
   }
 
+  /// Get wallet transactions
+  Future<List<WalletTransaction>> getTransactions(String userId, {int limit = 50}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('wallet_transactions')
+          .where('userId', isEqualTo: userId)
+          .orderBy('timestamp', descending: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => WalletTransaction.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      _logger.e('Error getting transactions: $e');
+      return [];
+    }
+  }
+
+  /// Stream wallet transactions
+  Stream<List<WalletTransaction>> transactionsStream(String userId, {int limit = 50}) {
+    return _firestore
+        .collection('wallet_transactions')
+        .where('userId', isEqualTo: userId)
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => WalletTransaction.fromFirestore(doc))
+            .toList());
+  }
+
+  /// Get transaction by ID
+  Future<WalletTransaction?> getTransactionById(String transactionId) async {
+    try {
+      final doc = await _firestore
+          .collection('wallet_transactions')
+          .doc(transactionId)
+          .get();
+
+      if (doc.exists) {
+        return WalletTransaction.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      _logger.e('Error getting transaction: $e');
+      return null;
+    }
+  }
+
+  /// Check if user has sufficient balance
+  Future<bool> hasSufficientBalance(String userId, double amount) async {
+    try {
+      final balance = await getBalance(userId);
+      return balance >= amount;
+    } catch (e) {
+      _logger.e('Error checking balance: $e');
+      return false;
+    }
+  }
+
+  /// Get wallet statistics
+  Future<Map<String, dynamic>> getWalletStats(String userId) async {
+    try {
+      final wallet = await getWallet(userId);
+      if (wallet == null) return {};
+
+      final transactions = await getTransactions(userId);
+      final creditTransactions = transactions.where((t) => t.type == WalletTransactionType.credit).length;
+      final debitTransactions = transactions.where((t) => t.type == WalletTransactionType.debit).length;
+
+      return {
+        'balance': wallet.balance,
+        'totalAdded': wallet.totalAdded,
+        'totalSpent': wallet.totalSpent,
+        'transactionCount': transactions.length,
+        'creditTransactions': creditTransactions,
+        'debitTransactions': debitTransactions,
+        'createdAt': wallet.createdAt.toIso8601String(),
+        'updatedAt': wallet.updatedAt.toIso8601String(),
+      };
+    } catch (e) {
+      _logger.e('Error getting wallet stats: $e');
+      return {};
+    }
+  }
+
+  /// Generate unique transaction ID
+  String _generateTransactionId() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final random = Random().nextInt(9999);
+    return 'TXN_${timestamp}_$random';
+  }
+
+  /// Initialize wallet for new user
+  Future<Wallet?> initializeWallet(String userId) async {
+    try {
+      return await createWallet(userId);
+    } catch (e) {
+      _logger.e('Error initializing wallet: $e');
+      return null;
+    }
+  }
+
+  /// Dispose resources
   void dispose() {
-    _razorpay.clear();
+    _logger.i('Disposing WalletRepository');
   }
 } 

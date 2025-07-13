@@ -203,4 +203,83 @@ class ROfferItem {
   Map<String, dynamic> toJson() => _$ROfferItemToJson(this);
 
   int get priceValue => int.tryParse(price) ?? 0;
+}
+
+// Recharge Status Check Response Model
+@JsonSerializable()
+class RechargeStatusResponse {
+  @JsonKey(name: 'ERROR')
+  final String error;
+  
+  @JsonKey(name: 'STATUS')
+  final String status;
+  
+  @JsonKey(name: 'MOBILENO')
+  final String mobileNo;
+  
+  @JsonKey(name: 'MESSAGE')
+  final String message;
+  
+  @JsonKey(name: 'Amount')
+  final String? amount;
+  
+  @JsonKey(name: 'RechargeDate')
+  final String? rechargeDate;
+
+  RechargeStatusResponse({
+    required this.error,
+    required this.status,
+    required this.mobileNo,
+    required this.message,
+    this.amount,
+    this.rechargeDate,
+  });
+
+  factory RechargeStatusResponse.fromJson(Map<String, dynamic> json) => _$RechargeStatusResponseFromJson(json);
+  Map<String, dynamic> toJson() => _$RechargeStatusResponseToJson(this);
+
+  bool get isSuccess => error == '0' && status == '1';
+  bool get hasRechargeData => amount != null && rechargeDate != null;
+  
+  double? get amountValue => amount != null ? double.tryParse(amount!) : null;
+}
+
+// Recharge Expiry Check Response Model
+@JsonSerializable()
+class RechargeExpiryResponse {
+  @JsonKey(name: 'ERROR')
+  final String error;
+  
+  @JsonKey(name: 'STATUS')
+  final String status;
+  
+  @JsonKey(name: 'MOBILENO')
+  final String mobileNo;
+  
+  @JsonKey(name: 'MESSAGE')
+  final String message;
+  
+  @JsonKey(name: 'OUTGOING')
+  final String? outgoing;
+  
+  @JsonKey(name: 'INCOMING')
+  final String? incoming;
+
+  RechargeExpiryResponse({
+    required this.error,
+    required this.status,
+    required this.mobileNo,
+    required this.message,
+    this.outgoing,
+    this.incoming,
+  });
+
+  factory RechargeExpiryResponse.fromJson(Map<String, dynamic> json) => _$RechargeExpiryResponseFromJson(json);
+  Map<String, dynamic> toJson() => _$RechargeExpiryResponseToJson(this);
+
+  bool get isSuccess => error == '0' && status == '1';
+  bool get hasExpiryData => outgoing != null && incoming != null;
+  
+  DateTime? get outgoingDate => outgoing != null ? DateTime.tryParse(outgoing!) : null;
+  DateTime? get incomingDate => incoming != null ? DateTime.tryParse(incoming!) : null;
 } 

@@ -206,4 +206,132 @@ class PlanApiService {
       mobileNumber: mobileNumber,
     );
   }
+
+  /// Check last recharge status for Airtel and VI operators only
+  Future<RechargeStatusResponse> checkLastRecharge({
+    required String operatorCode,
+    required String mobileNumber,
+  }) async {
+    try {
+      _logger.i('Checking last recharge for operator: $operatorCode, mobile: ${_maskMobileNumber(mobileNumber)}');
+
+      // Clean mobile number
+      String cleanNumber = mobileNumber.replaceAll(RegExp(r'[^\d]'), '');
+      if (cleanNumber.startsWith('91')) {
+        cleanNumber = cleanNumber.substring(2);
+      }
+      if (cleanNumber.length != 10) {
+        throw Exception('Invalid mobile number length');
+      }
+
+      // Check if operator supports recharge status check (only Airtel and VI)
+      final operatorName = APIConstants.getOperatorName(operatorCode).toLowerCase();
+      if (!operatorName.contains('airtel') && !operatorName.contains('vodafone') && !operatorName.contains('idea') && !operatorName.contains('vi')) {
+        throw Exception('Recharge status check is only available for Airtel and VI operators');
+      }
+
+      // Test proxy connection first
+      final isProxyConnected = await _proxyService.testConnection();
+      if (!isProxyConnected) {
+        throw Exception('Cannot connect to proxy server at ${ProxyService.proxyHost}:${ProxyService.proxyPort}');
+      }
+
+      // Make API request through proxy
+      final response = await _proxyService.get(
+        '/Mobile/CheckLastRecharge',
+        queryParameters: {
+          'Apimember_Id': APIConstants.planApiUserId,
+          'Api_Password': APIConstants.planApiPassword,
+          'Operator_Code': operatorCode,
+          'Mobile_No': cleanNumber,
+        },
+        timeout: const Duration(seconds: 30),
+      );
+
+      _logger.d('Recharge status response: ${response.statusCode} - ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        final statusResponse = RechargeStatusResponse.fromJson(jsonData);
+        
+        _logger.i('Recharge status check completed - Success: ${statusResponse.isSuccess}');
+        return statusResponse;
+      } else {
+        throw Exception('HTTP ${response.statusCode}: Failed to check recharge status');
+      }
+    } catch (e) {
+      _logger.e('Error checking recharge status: $e');
+      // Return error response
+      return RechargeStatusResponse(
+        error: '1',
+        status: '3',
+        mobileNo: mobileNumber,
+        message: 'Failed to check recharge status: $e',
+      );
+    }
+  }
+
+  /// Check recharge expiry dates for Airtel and VI operators only
+  Future<RechargeExpiryResponse> checkRechargeExpiry({
+    required String operatorCode,
+    required String mobileNumber,
+  }) async {
+    try {
+      _logger.i('Checking recharge expiry for operator: $operatorCode, mobile: ${_maskMobileNumber(mobileNumber)}');
+
+      // Clean mobile number
+      String cleanNumber = mobileNumber.replaceAll(RegExp(r'[^\d]'), '');
+      if (cleanNumber.startsWith('91')) {
+        cleanNumber = cleanNumber.substring(2);
+      }
+      if (cleanNumber.length != 10) {
+        throw Exception('Invalid mobile number length');
+      }
+
+      // Check if operator supports recharge expiry check (only Airtel and VI)
+      final operatorName = APIConstants.getOperatorName(operatorCode).toLowerCase();
+      if (!operatorName.contains('airtel') && !operatorName.contains('vodafone') && !operatorName.contains('idea') && !operatorName.contains('vi')) {
+        throw Exception('Recharge expiry check is only available for Airtel and VI operators');
+      }
+
+      // Test proxy connection first
+      final isProxyConnected = await _proxyService.testConnection();
+      if (!isProxyConnected) {
+        throw Exception('Cannot connect to proxy server at ${ProxyService.proxyHost}:${ProxyService.proxyPort}');
+      }
+
+      // Make API request through proxy
+      final response = await _proxyService.get(
+        '/Mobile/RechargeExpiryDate',
+        queryParameters: {
+          'Apimember_Id': APIConstants.planApiUserId,
+          'Api_Password': APIConstants.planApiPassword,
+          'Operator_Code': operatorCode,
+          'Mobile_No': cleanNumber,
+        },
+        timeout: const Duration(seconds: 30),
+      );
+
+      _logger.d('Recharge expiry response: ${response.statusCode} - ${response.body}');
+
+      if (response.statusCode == 200) {
+        final jsonData = json.decode(response.body);
+        final expiryResponse = RechargeExpiryResponse.fromJson(jsonData);
+        
+        _logger.i('Recharge expiry check completed - Success: ${expiryResponse.isSuccess}');
+        return expiryResponse;
+      } else {
+        throw Exception('HTTP ${response.statusCode}: Failed to check recharge expiry');
+      }
+    } catch (e) {
+      _logger.e('Error checking recharge expiry: $e');
+      // Return error response
+      return RechargeExpiryResponse(
+        error: '1',
+        status: '3',
+        mobileNo: mobileNumber,
+        message: 'Failed to check recharge expiry: $e',
+      );
+    }
+  }
 }

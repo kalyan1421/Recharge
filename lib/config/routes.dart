@@ -7,7 +7,9 @@ import '../presentation/screens/auth/otp_verification_screen.dart';
 import '../presentation/screens/auth/otp_verification_signup_screen.dart';
 import '../presentation/screens/auth/phone_signup_screen.dart';
 import '../presentation/screens/auth/registration_screen.dart';
-import '../presentation/screens/home_screen.dart';
+import '../presentation/screens/add_money_screen.dart';
+import '../presentation/screens/home/home_screen.dart';
+// import '../presentation/screens/home_screen.dart';
 import '../presentation/screens/main_screen.dart';
 import '../presentation/screens/recharge_screen.dart';
 import '../presentation/screens/splash/splash_screen.dart';
@@ -60,6 +62,14 @@ final router = GoRouter(
     GoRoute(
       path: '/recharge',
       builder: (context, state) => const RechargeScreen(),
+    ),
+    GoRoute(
+      path: '/add-money',
+      name: 'add-money',
+      builder: (context, state) {
+        final suggestedAmount = state.extra as double?;
+        return AddMoneyScreen(suggestedAmount: suggestedAmount);
+      },
     ),
   ],
 ); 

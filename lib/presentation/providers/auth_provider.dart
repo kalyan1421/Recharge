@@ -160,7 +160,7 @@ class AuthProvider extends ChangeNotifier {
       
       _logger.i('Sending OTP to: $formattedPhone');
       
-      return await _sendOTPMobile(formattedPhone);
+        return await _sendOTPMobile(formattedPhone);
       
     } catch (e) {
       _logger.e('Send OTP failed: $e');
@@ -404,7 +404,7 @@ class AuthProvider extends ChangeNotifier {
       } else if (e is FirebaseAuthException) {
         _setError(_getErrorMessage(e));
       } else {
-        _setError('Invalid OTP. Please try again.');
+      _setError('Invalid OTP. Please try again.');
       }
       return false;
     } finally {

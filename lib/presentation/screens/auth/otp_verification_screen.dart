@@ -47,7 +47,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<AuthProvider>();
       
       // First try normal verification
       bool success = await authProvider.verifyOtpWithRetry(_otpCode);
@@ -62,12 +62,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       }
 
       if (mounted) {
-        if (success) {
-          // Check auth state to determine next step
-          if (authProvider.authState == AuthState.otpVerified) {
+      if (success) {
+        // Check auth state to determine next step
+        if (authProvider.authState == AuthState.otpVerified) {
             // New user - navigate to registration
             context.go('/registration', extra: widget.phoneNumber);
-          } else if (authProvider.authState == AuthState.authenticated) {
+        } else if (authProvider.authState == AuthState.authenticated) {
             // Existing user - navigate to home
             context.go('/home');
           }
@@ -89,7 +89,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           }
           _focusNodes[0].requestFocus();
         }
-      }
+        }
     } catch (e) {
       if (mounted) {
         String errorMessage = 'Verification failed. Please try again.';

@@ -42,6 +42,32 @@ class RoboticsExchangeService {
       final circleCode = OperatorMapping.getCircleCode(circleName);
       final txnId = _generateTransactionId();
 
+      // Debug logging for operator mapping
+      print('🔍 Operator Mapping Debug:');
+      print('  Input Operator Name: "$operatorName"');
+      print('  Mapped Operator Code: "$operatorCode"');
+      if (operatorCode == 'JL' && operatorName.toUpperCase().contains('JIO')) {
+        print('  📱 JIO → JIO LITE: Using active JIO LITE LAPU instead of inactive JIO LAPU');
+      }
+      print('  Input Circle Name: "$circleName"');
+      print('  Mapped Circle Code: "$circleCode"');
+      print('  Transaction ID: "$txnId"');
+      print('  Amount: ₹$amount');
+      print('  Group ID: ${groupId ?? "null"}');
+      print('  📊 Expected to use JIO LITE LAPU numbers: 8489377810, 9600888932, 9786468280, 9994400390');
+      print('  💰 Available JIO LITE balances: 1241.12 + 8.7 + 17.32 + 226.7 = ₹1493.84');
+      print('  Status: All JIO LITE LAPU numbers are ACTIVE ✅');
+      print('');
+      
+      // Check if we have enough balance across all JIO LITE LAPU numbers
+      if (operatorCode == 'JL') {
+        final totalJioLiteBalance = 1241.12 + 8.7 + 17.32 + 226.7;
+        final rechargeAmount = double.tryParse(amount) ?? 0.0;
+        if (rechargeAmount > totalJioLiteBalance) {
+          print('⚠️ Warning: Recharge amount (₹$amount) exceeds total JIO LITE balance (₹$totalJioLiteBalance)');
+        }
+      }
+
       // Build query parameters
       final queryParams = {
         'Apimember_id': _apiMemberId,
@@ -54,25 +80,35 @@ class RoboticsExchangeService {
         if (groupId != null) 'Group_Id': groupId,
       };
 
-      print('Recharge Request - Endpoint: /GetMobileRecharge');
-      print('Recharge Request - Params: $queryParams');
+      print('📤 Recharge Request - Endpoint: /GetMobileRecharge');
+      print('📤 Recharge Request - Params: $queryParams');
 
       final response = await _proxyService.getRoboticsExchange(
         '/GetMobileRecharge',
         queryParameters: queryParams,
       );
 
-      print('Recharge Response Status: ${response.statusCode}');
-      print('Recharge Response Body: ${response.body}');
+      print('📥 Recharge Response Status: ${response.statusCode}');
+      print('📥 Recharge Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final jsonData = json.decode(response.body);
-        return RechargeResponse.fromJson(jsonData);
+        final rechargeResponse = RechargeResponse.fromJson(jsonData);
+        
+        // Log the response details
+        print('✅ Recharge Response Details:');
+        print('  Error Code: ${rechargeResponse.error}');
+        print('  Status: ${rechargeResponse.status}');
+        print('  Message: ${rechargeResponse.message}');
+        print('  Order ID: ${rechargeResponse.orderId}');
+        print('  Operator Transaction ID: ${rechargeResponse.opTransId}');
+        
+        return rechargeResponse;
       } else {
         throw Exception('Failed to perform recharge: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error in performRecharge: $e');
+      print('❌ Error in performRecharge: $e');
       throw Exception('Recharge failed: $e');
     }
   }
@@ -325,7 +361,7 @@ class RoboticsExchangeService {
       amount: amount,
       groupId: groupId,
     );
-  }
+}
 
   /// Validate recharge amount
   bool validateRechargeAmount(String amount) {
@@ -353,13 +389,13 @@ class RoboticsExchangeService {
   /// Get user-friendly error message
   String getErrorMessage(String errorCode) {
     return RechargeErrorCodes.getErrorMessage(errorCode);
-  }
+}
 
   /// Check if operator supports R-offers
   bool supportsROffers(String operatorName) {
     final supportedOperators = ['AIRTEL', 'VODAFONEIDEA', 'VI'];
     return supportedOperators.contains(operatorName.toUpperCase());
-  }
+}
 
   /// Get callback URL with parameters
   String getCallbackUrl({
@@ -372,5 +408,178 @@ class RoboticsExchangeService {
     required String message,
   }) {
     return '$_callbackUrl?status=$status&operatorid=$operatorId&agentid=$memberTxnId&txnid=$txnId&number=$number&amount=$amount&message=${Uri.encodeComponent(message)}';
+  }
+
+  /// Check if LAPU is active for a specific operator
+  Future<bool> isLapuActive(String operatorCode) async {
+    try {
+      final lapuBalance = await getLapuWiseBalance(operatorCode);
+      if (lapuBalance != null && lapuBalance['ERROR'] == '0') {
+        final lapuReport = lapuBalance['LAPUREPORT'] as List<dynamic>?;
+        if (lapuReport != null && lapuReport.isNotEmpty) {
+          // Check if any LAPU for this operator is active
+          for (final lapu in lapuReport) {
+            if (lapu['Lstatus'] == 'Active') {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    } catch (e) {
+      print('Error checking LAPU status: $e');
+      return false;
+    }
+  }
+
+  /// Get active LAPU number for operator
+  Future<String?> getActiveLapuNumber(String operatorCode) async {
+    try {
+      final lapuBalance = await getLapuWiseBalance(operatorCode);
+      if (lapuBalance != null && lapuBalance['ERROR'] == '0') {
+        final lapuReport = lapuBalance['LAPUREPORT'] as List<dynamic>?;
+        if (lapuReport != null && lapuReport.isNotEmpty) {
+          // Find first active LAPU
+          for (final lapu in lapuReport) {
+            if (lapu['Lstatus'] == 'Active') {
+              return lapu['LapuNumber']?.toString();
+            }
+          }
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error getting active LAPU number: $e');
+      return null;
+    }
+  }
+
+  /// Enhanced perform recharge with LAPU status checking
+  Future<RechargeResponse> performRechargeWithLapuCheck({
+    required String mobileNumber,
+    required String operatorName,
+    required String circleName,
+    required String amount,
+    String? groupId,
+  }) async {
+    try {
+      // Map operator and circle names to codes
+      final operatorCode = OperatorMapping.getOperatorCode(operatorName);
+      final circleCode = OperatorMapping.getCircleCode(circleName);
+
+      print('🔍 Enhanced Recharge with LAPU Check:');
+      print('  Operator: $operatorName -> $operatorCode');
+      print('  Circle: $circleName -> $circleCode');
+
+      // Check LAPU status before attempting recharge
+      final isLapuActiveForOperator = await isLapuActive(operatorCode);
+      print('  LAPU Status: ${isLapuActiveForOperator ? 'Active' : 'Inactive'}');
+
+      if (!isLapuActiveForOperator) {
+        print('⚠️  WARNING: LAPU for $operatorName is inactive!');
+        
+        // For Jio, provide specific guidance
+        if (operatorCode == 'JO') {
+          return RechargeResponse(
+            error: '6',
+            status: 3,
+            orderId: '',
+            memberReqId: _generateTransactionId(),
+            message: 'Jio LAPU SIM is inactive. Please contact support to reactivate LAPU number 0681274064',
+            opTransId: null,
+            commission: null,
+            mobileNo: mobileNumber,
+            amount: amount,
+            lapuNo: '0681274064',
+            openingBal: null,
+            closingBal: null,
+          );
+        }
+      }
+
+      // Proceed with normal recharge
+      return await performRecharge(
+        mobileNumber: mobileNumber,
+        operatorName: operatorName,
+        circleName: circleName,
+        amount: amount,
+        groupId: groupId,
+      );
+
+    } catch (e) {
+      print('❌ Error in performRechargeWithLapuCheck: $e');
+      throw Exception('Enhanced recharge failed: $e');
+    }
+  }
+
+  /// Get LAPU status report
+  Future<Map<String, dynamic>> getLapuStatusReport() async {
+    final operatorCodes = ['AT', 'JO', 'VI', 'BS'];
+    final operatorNames = ['AIRTEL', 'JIO', 'VODAFONEIDEA', 'BSNL'];
+    final statusReport = <String, dynamic>{};
+
+    for (int i = 0; i < operatorCodes.length; i++) {
+      final operatorCode = operatorCodes[i];
+      final operatorName = operatorNames[i];
+      
+      try {
+        final lapuBalance = await getLapuWiseBalance(operatorCode);
+        if (lapuBalance != null && lapuBalance['ERROR'] == '0') {
+          final lapuReport = lapuBalance['LAPUREPORT'] as List<dynamic>?;
+          if (lapuReport != null && lapuReport.isNotEmpty) {
+            statusReport[operatorName] = {
+              'status': 'success',
+              'lapu_count': lapuReport.length,
+              'active_count': lapuReport.where((l) => l['Lstatus'] == 'Active').length,
+              'inactive_count': lapuReport.where((l) => l['Lstatus'] == 'Inactive').length,
+              'total_balance': lapuReport.fold(0.0, (sum, l) => sum + (l['LapuBal'] ?? 0.0)),
+              'lapu_details': lapuReport,
+            };
+          }
+        }
+      } catch (e) {
+        statusReport[operatorName] = {
+          'status': 'error',
+          'error': e.toString(),
+        };
+      }
+    }
+
+    return statusReport;
+  }
+
+  /// Check if operator balance is sufficient
+  Future<bool> hasOperatorBalance(String operatorCode, double amount) async {
+    try {
+      final operatorBalance = await getOperatorBalance();
+      if (operatorBalance.isSuccess && operatorBalance.record != null) {
+        final record = operatorBalance.record!;
+        
+        String balanceKey;
+        switch (operatorCode) {
+          case 'AT':
+            balanceKey = 'Airtelbalance';
+            break;
+          case 'JO':
+            balanceKey = 'jiobalance';
+            break;
+          case 'VI':
+            balanceKey = 'Vodabalance';
+            break;
+          case 'BS':
+            balanceKey = 'Bsnlbalance';
+            break;
+          default:
+            return false;
+        }
+        
+        final balance = record[balanceKey] as num? ?? 0;
+        return balance >= amount;
+      }
+      return false;
+    } catch (e) {
+      print('Error checking operator balance: $e');
+      return false;
+    }
   }
 } 

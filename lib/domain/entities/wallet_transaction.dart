@@ -109,6 +109,62 @@ class WalletTransaction {
     };
   }
 
+  /// Create WalletTransaction from JSON
+  factory WalletTransaction.fromJson(Map<String, dynamic> json) {
+    return WalletTransaction(
+      id: json['id'] ?? '',
+      transactionId: json['transactionId'] ?? '',
+      userId: json['userId'] ?? '',
+      amount: (json['amount'] ?? 0).toDouble(),
+      type: WalletTransactionType.values.firstWhere(
+        (e) => e.toString() == 'WalletTransactionType.${json['type']}',
+        orElse: () => WalletTransactionType.debit,
+      ),
+      status: WalletTransactionStatus.values.firstWhere(
+        (e) => e.toString() == 'WalletTransactionStatus.${json['status']}',
+        orElse: () => WalletTransactionStatus.pending,
+      ),
+      description: json['description'] ?? '',
+      timestamp: json['timestamp'] is Timestamp 
+          ? (json['timestamp'] as Timestamp).toDate()
+          : DateTime.parse(json['timestamp']),
+      createdAt: json['createdAt'] is Timestamp 
+          ? (json['createdAt'] as Timestamp).toDate()
+          : DateTime.parse(json['createdAt']),
+      updatedAt: json['updatedAt'] is Timestamp 
+          ? (json['updatedAt'] as Timestamp).toDate()
+          : DateTime.parse(json['updatedAt']),
+      balanceAfter: (json['balanceAfter'] ?? 0).toDouble(),
+      balanceBefore: (json['balanceBefore'] ?? 0).toDouble(),
+      reference: json['reference'],
+      gateway: json['gateway'],
+      gatewayTransactionId: json['gatewayTransactionId'],
+      metadata: json['metadata'],
+    );
+  }
+
+  /// Convert to JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'transactionId': transactionId,
+      'userId': userId,
+      'amount': amount,
+      'type': type.toString().split('.').last,
+      'status': status.toString().split('.').last,
+      'description': description,
+      'timestamp': timestamp.toIso8601String(),
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'balanceAfter': balanceAfter,
+      'balanceBefore': balanceBefore,
+      'reference': reference,
+      'gateway': gateway,
+      'gatewayTransactionId': gatewayTransactionId,
+      'metadata': metadata,
+    };
+  }
+
   /// Copy with new values
   WalletTransaction copyWith({
     String? id,
