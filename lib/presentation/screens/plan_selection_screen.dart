@@ -1,476 +1,857 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:async';
-import '../../data/models/operator_info.dart';
 import '../../data/models/mobile_plans.dart';
-import '../../data/services/plan_service.dart';
-import '../../data/services/recharge_service.dart';
-import '../../data/services/live_recharge_service.dart';
+import '../../data/models/operator_info.dart';
+import '../../data/models/recharge_models.dart';
+import '../../data/services/plan_api_service.dart';
+import '../../data/services/robotics_exchange_service.dart';
 import '../widgets/plan_card.dart';
-import '../providers/wallet_provider.dart';
-import '../providers/auth_provider.dart';
-import 'add_money_screen.dart';
 
 class PlanSelectionScreen extends StatefulWidget {
   final String mobileNumber;
   final OperatorInfo operatorInfo;
-  final String circleCode;
 
   const PlanSelectionScreen({
-    super.key,
+    Key? key,
     required this.mobileNumber,
     required this.operatorInfo,
-    required this.circleCode,
-  });
+  }) : super(key: key);
 
   @override
   State<PlanSelectionScreen> createState() => _PlanSelectionScreenState();
 }
 
-class _PlanSelectionScreenState extends State<PlanSelectionScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final PlanService _planService = PlanService();
-  
-  MobilePlans? _mobilePlans;
-  bool _isLoading = true;
-  String? _errorMessage;
-  List<SpecialOffer> _specialOffers = [];
+class _PlanSelectionScreenState extends State<PlanSelectionScreen> {
+  final PlanApiService _planApiService = PlanApiService();
+  final RoboticsExchangeService _rechargeService = RoboticsExchangeService();
 
-  final List<PlanCategory> _categories = [
-    PlanCategory.trulyUnlimited,
-    PlanCategory.data,
-    PlanCategory.talktime,
-    PlanCategory.cricketPacks,
-    PlanCategory.planVouchers,
-    PlanCategory.roamingPacks,
-  ];
+  MobilePlansResponse? _plansResponse;
+  ROfferResponse? _rOfferResponse;
+  WalletBalanceResponse? _walletBalance;
+  bool _isLoadingPlans = false;
+  bool _isLoadingROffers = false;
+  bool _isLoadingWallet = false;
+  bool _isProcessingRecharge = false;
+  String? _plansError;
+  String? _rOffersError;
+  String? _walletError;
+  String _selectedCategory = 'Unlimited';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _categories.length, vsync: this);
-    _loadPlans();
+    _fetchMobilePlans();
+    _fetchROffers();
+    _fetchWalletBalance();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _planApiService.dispose();
+    _rechargeService.dispose();
     super.dispose();
   }
 
-  Future<void> _loadPlans() async {
+  Future<void> _fetchWalletBalance() async {
     setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+      _isLoadingWallet = true;
+      _walletError = null;
     });
 
     try {
-      // Check if we have a valid operator code
-      final opCode = widget.operatorInfo.opCode;
-      if (opCode == null || opCode.isEmpty) {
-        throw Exception('Invalid operator code');
-      }
-
-      // Load mobile plans
-      final plans = await _planService.fetchMobilePlans(
-        opCode,
-        widget.circleCode,
-      );
-
-      // Load special offers
-      final offers = await _planService.fetchROffers(
-        opCode,
-        widget.mobileNumber,
-      );
-
-      if (mounted) {
-        setState(() {
-          _mobilePlans = plans;
-          _specialOffers = offers.map((offer) => SpecialOffer.fromJson(offer)).toList();
-          _isLoading = false;
-        });
-      }
+      final response = await _rechargeService.getWalletBalance();
+      setState(() {
+        _walletBalance = response;
+        _isLoadingWallet = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString();
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _walletError = e.toString();
+        _isLoadingWallet = false;
+      });
+    }
+  }
+
+  Future<void> _fetchMobilePlans() async {
+    setState(() {
+      _isLoadingPlans = true;
+      _plansError = null;
+    });
+
+    try {
+      final response = await _planApiService.fetchMobilePlansFromOperatorInfo(widget.operatorInfo);
+      setState(() {
+        _plansResponse = response;
+        _isLoadingPlans = false;
+      });
+    } catch (e) {
+      setState(() {
+        _plansError = e.toString();
+        _isLoadingPlans = false;
+      });
+    }
+  }
+
+  Future<void> _fetchROffers() async {
+    setState(() {
+      _isLoadingROffers = true;
+      _rOffersError = null;
+    });
+
+    try {
+      final response = await _planApiService.fetchROffersFromOperatorInfo(
+        operatorInfo: widget.operatorInfo,
+        mobileNumber: widget.mobileNumber,
+      );
+      setState(() {
+        _rOfferResponse = response;
+        _isLoadingROffers = false;
+      });
+    } catch (e) {
+      setState(() {
+        _rOffersError = e.toString();
+        _isLoadingROffers = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${widget.operatorInfo.operator ?? "Mobile"} Plans',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-            Text(
-              '+91 ${widget.mobileNumber}',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-                fontWeight: FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.transparent,
+        title: const Text('Recharge'),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.black87),
-            onPressed: _loadPlans,
+          TextButton(
+            onPressed: () {
+              // Navigate to Add Money screen
+            },
+            child: const Text(
+              'Add Money',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? _buildErrorWidget()
-              : _buildPlanTabs(),
+      body: Column(
+        children: [
+          // Mobile Number Input Section
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // Mobile Number Input
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone, color: Colors.grey),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Mobile Number',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            Text(
+                              widget.mobileNumber,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Operator Selection
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Colors.red,
+                        child: Text(
+                          widget.operatorInfo.operator.substring(0, 1),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${widget.operatorInfo.operator}-Prepaid',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Amount Input
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.currency_rupee, color: Colors.grey),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Enter Amount',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Incorrect Recharge wont be refundable.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.purple,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Action Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {},
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Check Offer'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {},
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Plan Sheet'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Wallet Balance
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.purple[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.purple,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(
+                          Icons.account_balance_wallet,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                                             Column(
+                         crossAxisAlignment: CrossAxisAlignment.start,
+                         children: [
+                           const Text(
+                             'Wallet Balance',
+                             style: TextStyle(
+                               fontSize: 12,
+                               color: Colors.grey,
+                             ),
+                           ),
+                           Text(
+                             _getWalletBalanceText(),
+                             style: const TextStyle(
+                               fontSize: 16,
+                               fontWeight: FontWeight.bold,
+                             ),
+                           ),
+                         ],
+                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Proceed Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Proceed',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Category Tabs
+          Container(
+            color: Colors.white,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  _buildCategoryTab('Unlimited', _selectedCategory == 'Unlimited'),
+                  _buildCategoryTab('Data', _selectedCategory == 'Data'),
+                  _buildCategoryTab('Talktime', _selectedCategory == 'Talktime'),
+                  _buildCategoryTab('Roaming', _selectedCategory == 'Roaming'),
+                  _buildCategoryTab('Ratecut', _selectedCategory == 'Ratecut'),
+                ],
+              ),
+            ),
+          ),
+          // Plans List
+          Expanded(
+            child: _buildPlansContent(),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildErrorWidget() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+  Widget _buildCategoryTab(String category, bool isSelected) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedCategory = category;
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(right: 16, bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.black : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Colors.black : Colors.grey,
+          ),
+        ),
+        child: Text(
+          category,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlansContent() {
+    if (_isLoadingPlans) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading plans...'),
+          ],
+        ),
+      );
+    }
+
+    if (_plansError != null) {
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(
               Icons.error_outline,
-              size: 60,
+              size: 64,
               color: Colors.red,
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Failed to load plans',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+            Text(
+              'Error loading plans',
+              style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 8),
-            Text(
-              _errorMessage!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                _plansError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey),
               ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _loadPlans,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C63FF),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlanTabs() {
-    if (_mobilePlans == null) return const SizedBox.shrink();
-
-    return Column(
-      children: [
-        // Special Offers Section
-        if (_specialOffers.isNotEmpty) _buildSpecialOffers(),
-        
-        // Tab Bar
-        Container(
-          color: Colors.white,
-          child: TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            indicatorColor: const Color(0xFF6C63FF),
-            labelColor: const Color(0xFF6C63FF),
-            unselectedLabelColor: Colors.grey,
-            tabs: _categories.map((category) {
-              final plans = _mobilePlans!.getPlansByCategory(category);
-              return Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(category.icon),
-                    const SizedBox(width: 4),
-                    Text(category.displayName),
-                    if (plans.isNotEmpty) ...[
-                      const SizedBox(width: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6C63FF),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          plans.length.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        
-        // Tab Views
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: _categories.map((category) {
-              final plans = _mobilePlans!.getPlansByCategory(category);
-              return _buildPlanList(plans, category);
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSpecialOffers() {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFFB74D), Color(0xFFFF9800)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.star, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Special Offers',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 80,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _specialOffers.length,
-              itemBuilder: (context, index) {
-                final offer = _specialOffers[index];
-                return Container(
-                  width: 200,
-                  margin: const EdgeInsets.only(right: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        offer.formattedAmount,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        offer.description,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlanList(List<PlanItem> plans, PlanCategory category) {
-    if (plans.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.inbox_outlined,
-              size: 60,
-              color: Colors.grey[400],
             ),
             const SizedBox(height: 16),
-            Text(
-              'No ${category.displayName.toLowerCase()} plans available',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
+            ElevatedButton(
+              onPressed: _fetchMobilePlans,
+              child: const Text('Retry'),
             ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: plans.length,
-      itemBuilder: (context, index) {
-        final plan = plans[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: PlanCard(
-            plan: plan,
-            onTap: () => _selectPlan(plan),
-          ),
-        );
-      },
-    );
-  }
-
-  void _selectPlan(PlanItem plan) async {
-    final walletProvider = Provider.of<WalletProvider>(context, listen: false);
-    
-    // Check wallet balance
-    final validationResult = await _planService.validateRechargePrerequisites(
-      mobileNumber: widget.mobileNumber,
-      operatorCode: widget.operatorInfo.opCode ?? '',
-      circleCode: widget.circleCode,
-      planAmount: plan.rs,
-      walletBalance: walletProvider.balance,
-    );
-
-    if (!validationResult.isValid) {
-      _showInsufficientBalanceDialog(plan, validationResult);
-      return;
-    }
-
-    // Show confirmation dialog if wallet balance is sufficient
-    _showConfirmationDialog(plan, walletProvider.balance);
-  }
-
-  void _showInsufficientBalanceDialog(PlanItem plan, RechargeValidationResult validationResult) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning, color: Colors.orange, size: 24),
-            const SizedBox(width: 8),
-            const Text('Insufficient Balance'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+    return RefreshIndicator(
+      onRefresh: _fetchMobilePlans,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Plan: ${plan.formattedPrice}'),
-            Text('Current Balance: ₹${Provider.of<WalletProvider>(context, listen: false).balance.toStringAsFixed(2)}'),
-            Text('Required: ₹${validationResult.shortfallAmount.toStringAsFixed(2)} more'),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.orange.shade600, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      validationResult.errorMessage ?? 'Please add money to your wallet',
-                      style: TextStyle(
-                        color: Colors.orange.shade600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // Plans Section
+            _buildPlansSection(),
+            const SizedBox(height: 24),
+            // R-Offers Section (only if available)
+            if (_hasROffers()) _buildROffersSection(),
+            const SizedBox(height: 24),
+            // Recent Recharge Section
+            _buildRecentRechargeSection(),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+      ),
+    );
+  }
+
+  Widget _buildPlansSection() {
+    if (_plansResponse == null || _plansResponse!.rdata == null) {
+      return const Center(
+        child: Text('No plans available'),
+      );
+    }
+
+    final categories = _plansResponse!.rdata!.getAllCategories();
+    final selectedCategoryData = categories.firstWhere(
+      (cat) => cat.name.toLowerCase().contains(_selectedCategory.toLowerCase()),
+      orElse: () => categories.isNotEmpty ? categories.first : PlanCategory(name: 'No Plans', plans: []),
+    );
+
+    if (selectedCategoryData.plans.isEmpty) {
+      return const Center(
+        child: Text('No plans available for this category'),
+      );
+    }
+
+    return Column(
+      children: selectedCategoryData.plans.map((plan) => 
+        _buildPlanCard(plan)
+      ).toList(),
+    );
+  }
+
+  Widget _buildPlanCard(PlanItem plan) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.purple,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.purple.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Navigate to add money screen
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => AddMoneyScreen(
-                    suggestedAmount: validationResult.shortfallAmount,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Rs ${plan.priceString}/-',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Icon(
+                Icons.bookmark_border,
+                color: Colors.yellow,
+                size: 24,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _buildPlanDetail('Validity', plan.validity),
+              const SizedBox(width: 24),
+              _buildPlanDetail('Data', _extractDataFromDesc(plan.desc)),
+              const SizedBox(width: 24),
+              _buildPlanDetail('Unlimited', 'Local/STD'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                onPressed: () {},
+                child: const Text(
+                  'View Details',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
                   ),
                 ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Add Money'),
+              ),
+              ElevatedButton(
+                onPressed: () => _selectPlan(plan),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.purple,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: const Text(
+                  'Recharge Now',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  void _showConfirmationDialog(PlanItem plan, double walletBalance) {
+  Widget _buildPlanDetail(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _extractDataFromDesc(String desc) {
+    // Extract data information from description
+    final dataRegex = RegExp(r'(\d+\.?\d*)\s*(GB|MB)', caseSensitive: false);
+    final match = dataRegex.firstMatch(desc);
+    if (match != null) {
+      return '${match.group(1)} ${match.group(2)}/ Day';
+    }
+    return '1 GB/ Day';
+  }
+
+  bool _hasROffers() {
+    return _rOfferResponse != null && 
+           _rOfferResponse!.rdata != null && 
+           _rOfferResponse!.rdata!.isNotEmpty &&
+           !_isLoadingROffers &&
+           _rOffersError == null;
+  }
+
+  Widget _buildROffersSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'R-Offers',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._rOfferResponse!.rdata!.map((rOffer) => _buildROfferCard(rOffer)),
+      ],
+    );
+  }
+
+  Widget _buildROfferCard(ROfferItem rOffer) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.green,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.green.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Rs ${rOffer.price}/-',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Icon(
+                Icons.bookmark_border,
+                color: Colors.yellow,
+                size: 24,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            rOffer.offerText,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            rOffer.logDescription,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                onPressed: () {},
+                child: const Text(
+                  'View Details',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => _selectROffer(rOffer),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.green,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: const Text(
+                  'Recharge Now',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentRechargeSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Recent Recharge',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            TextButton(
+              onPressed: () {},
+              child: const Text(
+                'View All',
+                style: TextStyle(
+                  color: Colors.purple,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildRecentRechargeItem('9876543210', 'Airtel', 'Rs 545/-', 'Success'),
+        _buildRecentRechargeItem('9876543210', 'Jio', 'Rs 545/-', 'Success'),
+      ],
+    );
+  }
+
+  Widget _buildRecentRechargeItem(String number, String operator, String amount, String status) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: operator == 'Airtel' ? Colors.red : Colors.blue,
+            child: Text(
+              operator.substring(0, 1),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  number,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '28 May 2024 | 00:02:26 PM',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                status,
+                style: const TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                amount,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: () {},
+            child: const Text(
+              'Repeat Recharge',
+              style: TextStyle(
+                color: Colors.purple,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _selectPlan(PlanItem plan) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -479,47 +860,17 @@ class _PlanSelectionScreenState extends State<PlanSelectionScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Mobile: +91 ${widget.mobileNumber}'),
+            Text('Mobile: ${widget.mobileNumber}'),
             Text('Operator: ${widget.operatorInfo.operator}'),
-            Text('Amount: ${plan.formattedPrice}'),
-            Text('Validity: ${plan.validityDisplay}'),
+            Text('Circle: ${widget.operatorInfo.circle}'),
+            Text('Amount: ₹${plan.priceString}'),
+            Text('Validity: ${plan.validity}'),
+            const SizedBox(height: 8),
+            Text('Details: ${plan.desc}'),
             const SizedBox(height: 8),
             Text(
-              plan.cleanDescription,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.account_balance_wallet, color: Colors.green.shade600, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Wallet Balance: ₹${walletBalance.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: Colors.green.shade600,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Balance after recharge: ₹${(walletBalance - plan.rs).toStringAsFixed(2)}',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 12,
-              ),
+              'Current Balance: ${_getWalletBalanceText()}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -529,27 +880,130 @@ class _PlanSelectionScreenState extends State<PlanSelectionScreen>
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: _isProcessingRecharge ? null : () {
               Navigator.pop(context);
-              _processRecharge(plan);
+              _performRecharge(plan.priceString, plan.desc);
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6C63FF),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Proceed'),
+            child: _isProcessingRecharge 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Proceed'),
           ),
         ],
       ),
     );
   }
 
-  void _processRecharge(PlanItem plan) async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final walletProvider = Provider.of<WalletProvider>(context, listen: false);
-    final liveRechargeService = LiveRechargeService();
+  void _selectROffer(ROfferItem rOffer) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm R-Offer'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Mobile: ${widget.mobileNumber}'),
+            Text('Operator: ${widget.operatorInfo.operator}'),
+            Text('Circle: ${widget.operatorInfo.circle}'),
+            Text('Amount: ₹${rOffer.price}'),
+            const SizedBox(height: 8),
+            Text('Offer: ${rOffer.offerText}'),
+            Text('Details: ${rOffer.logDescription}'),
+            const SizedBox(height: 8),
+            Text(
+              'Current Balance: ${_getWalletBalanceText()}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: _isProcessingRecharge ? null : () {
+              Navigator.pop(context);
+              _performRecharge(rOffer.price, rOffer.offerText);
+            },
+            child: _isProcessingRecharge 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Proceed'),
+          ),
+        ],
+      ),
+    );
+  }
 
-    // Show enhanced loading dialog with progress tracking
+
+
+  String _getWalletBalanceText() {
+    if (_isLoadingWallet) {
+      return 'Loading...';
+    }
+    if (_walletError != null) {
+      return 'Error';
+    }
+    if (_walletBalance != null && _walletBalance!.isSuccess) {
+      return 'Rs ${_walletBalance!.buyerWalletBalance?.toStringAsFixed(2) ?? '0.00'}/-';
+    }
+    return 'Rs 0.00/-';
+  }
+
+  Future<void> _performRecharge(String amount, String description) async {
+    if (_isProcessingRecharge) return;
+
+    setState(() {
+      _isProcessingRecharge = true;
+    });
+
+    try {
+      // Validate amount
+      if (!_rechargeService.validateRechargeAmount(amount)) {
+        throw Exception('Invalid amount. Amount must be between Rs 10 and Rs 25000');
+      }
+
+      // Show processing dialog
+      _showRechargeProcessingDialog();
+
+      // Perform recharge
+      final response = await _rechargeService.performRechargeWithOperatorInfo(
+        mobileNumber: widget.mobileNumber,
+        operatorInfo: widget.operatorInfo,
+        amount: amount,
+      );
+
+      // Close processing dialog
+      Navigator.of(context).pop();
+
+      // Show result dialog
+      _showRechargeResultDialog(response, amount, description);
+
+      // Refresh wallet balance
+      _fetchWalletBalance();
+
+    } catch (e) {
+      // Close processing dialog
+      Navigator.of(context).pop();
+      
+      // Show error dialog
+      _showErrorDialog('Recharge Failed', e.toString());
+    } finally {
+      setState(() {
+        _isProcessingRecharge = false;
+      });
+    }
+  }
+
+  void _showRechargeProcessingDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -559,636 +1013,93 @@ class _PlanSelectionScreenState extends State<PlanSelectionScreen>
           children: [
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
-            Text(
-              'Processing recharge...',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            const Text('Processing Recharge...'),
             const SizedBox(height: 8),
             Text(
-              '₹${plan.rs} for ${widget.mobileNumber}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Please wait while we process your request securely...',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey.shade600,
-                fontSize: 12,
-              ),
+              'Please wait while we process your recharge.',
+              style: TextStyle(color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
           ],
         ),
       ),
     );
-
-    try {
-      // Pre-flight validations
-      if (authProvider.currentUser?.uid == null) {
-        Navigator.pop(context);
-        _showErrorDialog('Authentication required. Please log in again.');
-        return;
-      }
-
-      // Enhanced wallet balance validation
-      final currentBalance = walletProvider.balance;
-      if (currentBalance < plan.rs) {
-        Navigator.pop(context);
-        final shortfall = plan.rs - currentBalance;
-        _showInsufficientBalanceDialog(plan, RechargeValidationResult(
-          isValid: false,
-          errorMessage: 'Insufficient balance. Add ₹${shortfall.toStringAsFixed(2)} to proceed.',
-          shortfallAmount: shortfall,
-        ));
-        return;
-      }
-
-      // Deduct amount from wallet first (with rollback capability)
-      final walletSuccess = await walletProvider.deductMoney(
-        amount: plan.rs.toDouble(),
-        purpose: 'Mobile Recharge for ${widget.mobileNumber}',
-        referenceId: 'PENDING_${DateTime.now().millisecondsSinceEpoch}',
-      );
-
-      if (!walletSuccess) {
-        Navigator.pop(context);
-        _showErrorDialog('Failed to deduct amount from wallet. Please try again.');
-        return;
-      }
-
-      // Update loading dialog to show recharge processing
-      Navigator.pop(context);
-      _showEnhancedLoadingDialog('Processing recharge with operator...');
-
-      // Process the enhanced live recharge
-      final result = await liveRechargeService.processLiveRecharge(
-        userId: authProvider.currentUser!.uid,
-        mobileNumber: widget.mobileNumber,
-        operatorCode: widget.operatorInfo.opCode ?? '',
-        operatorName: widget.operatorInfo.operator ?? 'Unknown',
-        circleCode: widget.operatorInfo.circleCode ?? widget.circleCode,
-        planAmount: plan.rs,
-        planDescription: plan.cleanDescription,
-        validity: plan.validityDisplay,
-        walletBalance: walletProvider.balance,
-      );
-
-      // Close loading dialog
-      Navigator.pop(context);
-
-      // Handle result based on status
-      if (result.success && result.status == 'SUCCESS') {
-        // Immediate success
-        _showEnhancedRechargeResultDialog(result, true);
-      } else if (result.status == 'PENDING') {
-        // Pending - start monitoring
-        _showPendingRechargeDialog(result);
-        _startStatusMonitoring(result.transactionId);
-      } else {
-        // Failed - refund wallet
-        await _handleRechargeFailure(result, plan, walletProvider);
-      }
-
-    } catch (e) {
-      // Close any open dialogs
-      Navigator.pop(context);
-      
-      // Refund wallet on critical error
-      await walletProvider.addMoney(
-        amount: plan.rs.toDouble(),
-        paymentMethod: 'refund',
-        orderId: 'ERROR_REFUND_${DateTime.now().millisecondsSinceEpoch}',
-      );
-      
-      _showErrorDialog(
-        'A system error occurred. Your money has been refunded to your wallet. Please try again.'
-      );
-    }
   }
 
-  /// Show enhanced loading dialog with progress information
-  void _showEnhancedLoadingDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                const SizedBox(
-                  width: 60,
-                  height: 60,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6C63FF)),
-                  ),
-                ),
-                Icon(
-                  Icons.phone_android,
-                  color: Colors.grey.shade600,
-                  size: 24,
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              message,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.security,
-                    size: 14,
-                    color: Colors.blue.shade600,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Secure Transaction',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.blue.shade600,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Show pending recharge dialog with monitoring capability
-  void _showPendingRechargeDialog(RechargeResult result) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              Icons.hourglass_top,
-              color: Colors.orange.shade600,
-              size: 24,
-            ),
-            const SizedBox(width: 8),
-            const Text('Recharge Processing'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Transaction ID: ${result.transactionId}'),
-            Text('Mobile: +91 ${result.mobileNumber}'),
-            Text('Operator: ${result.operatorName}'),
-            Text('Amount: ${result.formattedAmount}'),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.orange.shade600, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Your recharge is being processed by the operator. We\'ll update you when it\'s complete.',
-                      style: TextStyle(
-                        color: Colors.orange.shade600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Monitoring status...',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Continue'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _checkTransactionStatus(result.transactionId);
-            },
-            child: const Text('Check Status'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Enhanced recharge result dialog with better visual feedback
-  void _showEnhancedRechargeResultDialog(RechargeResult result, bool isSuccess) {
-    final color = isSuccess ? Colors.green : Colors.red;
-    final icon = isSuccess ? Icons.check_circle : Icons.error;
-    final title = isSuccess ? 'Recharge Successful!' : 'Recharge Failed';
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildResultDetailRow('Transaction ID', result.transactionId),
-            _buildResultDetailRow('Mobile Number', '+91 ${result.mobileNumber}'),
-            _buildResultDetailRow('Operator', result.operatorName),
-            _buildResultDetailRow('Amount', result.formattedAmount),
-            _buildResultDetailRow('Status', result.status),
-            if (result.operatorTransactionId != null)
-              _buildResultDetailRow('Operator TXN ID', result.operatorTransactionId!),
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withOpacity(0.3)),
-              ),
-              child: Column(
-                children: [
-                  Icon(icon, color: color, size: 32),
-                  const SizedBox(height: 8),
-                  Text(
-                    result.message,
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          if (!isSuccess)
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                // Allow user to retry or contact support
-                _showRetryOptions(result);
-              },
-              child: const Text('Retry Options'),
-            ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              if (isSuccess) {
-                // Navigate to transaction history or home
-                Navigator.pop(context);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(isSuccess ? 'Done' : 'Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build result detail row
-  Widget _buildResultDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Handle recharge failure with wallet refund
-  Future<void> _handleRechargeFailure(
-    RechargeResult result,
-    PlanItem plan,
-    WalletProvider walletProvider,
-  ) async {
-    // Refund wallet
-    await walletProvider.addMoney(
-      amount: plan.rs.toDouble(),
-      paymentMethod: 'refund',
-      orderId: result.transactionId,
-    );
+  void _showRechargeResultDialog(RechargeResponse response, String amount, String description) {
+    final status = _rechargeService.getRechargeStatusFromResponse(response);
     
-    // Show failure dialog
-    _showEnhancedRechargeResultDialog(result, false);
-  }
-
-  /// Start automatic status monitoring for pending transactions
-  void _startStatusMonitoring(String transactionId) {
-    // Monitor status every 30 seconds for up to 10 minutes
-    Timer.periodic(const Duration(seconds: 30), (timer) async {
-      if (timer.tick > 20) {  // Stop after 10 minutes (20 * 30s)
-        timer.cancel();
-        return;
-      }
-
-      try {
-        final liveRechargeService = LiveRechargeService();
-        final updatedResult = await liveRechargeService.checkRechargeStatusEnhanced(
-          transactionId,
-          forceRemoteCheck: true,
-        );
-
-        if (updatedResult != null && updatedResult.status != 'PENDING') {
-          timer.cancel();
-          
-          // Show notification or update UI
-          if (mounted) {
-            _showStatusUpdateNotification(updatedResult);
-          }
-        }
-      } catch (e) {
-        // Continue monitoring despite errors
-        print('Status monitoring error: $e');
-      }
-    });
-  }
-
-  /// Show status update notification
-  void _showStatusUpdateNotification(RechargeResult result) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
           children: [
             Icon(
-              result.success ? Icons.check_circle : Icons.error,
-              color: Colors.white,
-              size: 20,
+              status == RechargeStatus.success ? Icons.check_circle : 
+              status == RechargeStatus.failed ? Icons.error : 
+              Icons.hourglass_empty,
+              color: status == RechargeStatus.success ? Colors.green : 
+                     status == RechargeStatus.failed ? Colors.red : 
+                     Colors.orange,
             ),
             const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Recharge ${result.status.toLowerCase()}: ${result.message}',
-                style: const TextStyle(color: Colors.white),
-              ),
-            ),
+            Text(status.displayName),
           ],
         ),
-        backgroundColor: result.success ? Colors.green : Colors.red,
-        action: SnackBarAction(
-          label: 'Details',
-          textColor: Colors.white,
-          onPressed: () => _showEnhancedRechargeResultDialog(result, result.success),
-        ),
-        duration: const Duration(seconds: 5),
-      ),
-    );
-  }
-
-  /// Check transaction status manually
-  void _checkTransactionStatus(String transactionId) async {
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Checking status...'),
-          ],
-        ),
-      ),
-    );
-
-    try {
-      final liveRechargeService = LiveRechargeService();
-      final result = await liveRechargeService.checkRechargeStatusEnhanced(
-        transactionId,
-        forceRemoteCheck: true,
-      );
-
-      Navigator.pop(context); // Close loading dialog
-
-      if (result != null) {
-        _showEnhancedRechargeResultDialog(result, result.success);
-      } else {
-        _showErrorDialog('Unable to check transaction status. Please try again later.');
-      }
-    } catch (e) {
-      Navigator.pop(context);
-      _showErrorDialog('Error checking status: ${e.toString()}');
-    }
-  }
-
-  /// Show retry options for failed transactions
-  void _showRetryOptions(RechargeResult result) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Retry Options'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.refresh),
-              title: const Text('Retry Recharge'),
-              subtitle: const Text('Try the same recharge again'),
-              onTap: () {
-                Navigator.pop(context);
-                // Retry the same plan
-                _processRecharge(_getSelectedPlan());
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.support_agent),
-              title: const Text('Contact Support'),
-              subtitle: const Text('Get help with this transaction'),
-              onTap: () {
-                Navigator.pop(context);
-                _contactSupport(result);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.home),
-              title: const Text('Return to Home'),
-              subtitle: const Text('Go back to main screen'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.popUntil(context, (route) => route.isFirst);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Contact support for transaction issues
-  void _contactSupport(RechargeResult result) {
-    // In production, this would open support chat or email
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Contact Support'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Transaction Details:'),
+            Text('Mobile: ${widget.mobileNumber}'),
+            Text('Operator: ${widget.operatorInfo.operator}'),
+            Text('Amount: ₹$amount'),
+                         Text('Order ID: ${response.orderId}'),
+             if (response.opTransId != null && response.opTransId!.isNotEmpty) 
+               Text('Transaction ID: ${response.opTransId}'),
             const SizedBox(height: 8),
-            Text('ID: ${result.transactionId}'),
-            Text('Amount: ${result.formattedAmount}'),
-            Text('Status: ${result.status}'),
-            const SizedBox(height: 16),
-            const Text(
-              'Our support team will help you resolve this issue. Please save this transaction ID for reference.',
-              style: TextStyle(fontSize: 14),
-            ),
+            Text('Message: ${response.message}'),
+            if (status == RechargeStatus.processing)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Your recharge is being processed. You will receive a confirmation shortly.',
+                  style: TextStyle(color: Colors.orange),
+                ),
+              ),
           ],
         ),
         actions: [
+          if (status == RechargeStatus.processing)
+            TextButton(
+              onPressed: () => _checkRechargeStatus(response.memberReqId),
+              child: const Text('Check Status'),
+            ),
+          if (status == RechargeStatus.failed)
+            TextButton(
+              onPressed: () => _showComplaintDialog(response),
+              child: const Text('Complaint'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              // In production, open support channel
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Support contact feature will be available soon'),
-                ),
-              );
-            },
-            child: const Text('Contact Support'),
+            child: const Text('OK'),
           ),
         ],
       ),
     );
   }
 
-  /// Get currently selected plan (helper method)
-  PlanItem _getSelectedPlan() {
-    // This would return the currently selected plan
-    // For now, return a default plan
-    return const PlanItem(
-      rs: 199,
-      validity: '28 days',
-      desc: 'Default plan',
-    );
-  }
-
-  void _showErrorDialog(String message) {
+  void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.error, color: Colors.red, size: 24),
+            const Icon(Icons.error, color: Colors.red),
             const SizedBox(width: 8),
-            const Text('Recharge Failed'),
+            Text(title),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('An error occurred while processing your recharge.'),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -1197,5 +1108,97 @@ class _PlanSelectionScreenState extends State<PlanSelectionScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _checkRechargeStatus(String memberReqId) async {
+    try {
+      final response = await _rechargeService.checkRechargeStatus(
+        memberRequestTxnId: memberReqId,
+      );
+      
+      Navigator.of(context).pop(); // Close current dialog
+             _showRechargeResultDialog(
+         RechargeResponse(
+           error: response.error,
+           status: response.status,
+           orderId: response.orderId,
+           opTransId: response.opTransId,
+           memberReqId: response.memberReqId,
+           message: response.message,
+           commission: response.commission,
+           mobileNo: response.mobileNo,
+           amount: response.amount,
+           lapuNo: response.lapuNo,
+           openingBal: response.openingBal,
+           closingBal: response.closingBal,
+         ),
+         response.amount ?? '0',
+         'Status Check',
+       );
+    } catch (e) {
+      _showErrorDialog('Status Check Failed', e.toString());
+    }
+  }
+
+  void _showComplaintDialog(RechargeResponse response) {
+    final TextEditingController complaintController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit Complaint'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+                     children: [
+             Text('Order ID: ${response.orderId}'),
+             Text('Transaction ID: ${response.opTransId ?? 'N/A'}'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: complaintController,
+              decoration: const InputDecoration(
+                labelText: 'Complaint Reason',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => _submitComplaint(response, complaintController.text),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitComplaint(RechargeResponse response, String complaintReason) async {
+    if (complaintReason.trim().isEmpty) {
+      _showErrorDialog('Invalid Input', 'Please enter a complaint reason.');
+      return;
+    }
+
+    try {
+             final complaintResponse = await _rechargeService.submitRechargeComplaint(
+         memberRequestTxnId: response.memberReqId,
+         ourRefTxnId: response.opTransId ?? '',
+         complaintReason: complaintReason,
+       );
+
+      Navigator.of(context).pop(); // Close complaint dialog
+      
+      if (complaintResponse.isSuccess) {
+        _showErrorDialog('Complaint Submitted', 'Your complaint has been submitted successfully.');
+      } else {
+        _showErrorDialog('Complaint Failed', complaintResponse.message);
+      }
+    } catch (e) {
+      _showErrorDialog('Complaint Failed', e.toString());
+    }
   }
 } 

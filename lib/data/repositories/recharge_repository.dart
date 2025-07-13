@@ -280,8 +280,8 @@ class RoboticsExchangeProvider implements RechargeAPIProvider {
       // Generate unique transaction ID
       final txnId = 'RBX_${DateTime.now().millisecondsSinceEpoch}_${request.mobile.substring(request.mobile.length - 4)}';
       
-      // Map operator code to robotics exchange format
-      final operatorCode = APIConstants.roboticsOperatorCodes[request.operatorCode] ?? '11';
+      // Map operator code to Robotics Exchange format
+      final operatorCode = APIConstants.roboticsOperatorCodes[request.operatorCode] ?? '11';  // Default to JIO
       
       // Build request parameters
       final url = Uri.parse(APIConstants.roboticsRechargeUrl).replace(queryParameters: {

@@ -10,130 +10,139 @@ RechargeRequest _$RechargeRequestFromJson(Map<String, dynamic> json) =>
     RechargeRequest(
       mobileNumber: json['mobileNumber'] as String,
       operatorCode: json['operatorCode'] as String,
-      circleCode: json['circleCode'] as String,
-      amount: (json['amount'] as num).toInt(),
-      planDescription: json['planDescription'] as String,
-      paymentMethod: $enumDecode(_$PaymentMethodEnumMap, json['paymentMethod']),
-      transactionId: json['transactionId'] as String?,
-      requestTime: DateTime.parse(json['requestTime'] as String),
+      amount: json['amount'] as String,
+      circle: json['circle'] as String,
+      memberRequestTxnId: json['memberRequestTxnId'] as String,
+      groupId: json['groupId'] as String?,
     );
 
 Map<String, dynamic> _$RechargeRequestToJson(RechargeRequest instance) =>
     <String, dynamic>{
       'mobileNumber': instance.mobileNumber,
       'operatorCode': instance.operatorCode,
-      'circleCode': instance.circleCode,
       'amount': instance.amount,
-      'planDescription': instance.planDescription,
-      'paymentMethod': _$PaymentMethodEnumMap[instance.paymentMethod]!,
-      'transactionId': instance.transactionId,
-      'requestTime': instance.requestTime.toIso8601String(),
-    };
-
-const _$PaymentMethodEnumMap = {
-  PaymentMethod.wallet: 'wallet',
-  PaymentMethod.razorpay: 'razorpay',
-  PaymentMethod.phonepe: 'phonepe',
-  PaymentMethod.paytm: 'paytm',
-  PaymentMethod.upi: 'upi',
-  PaymentMethod.netbanking: 'netbanking',
-  PaymentMethod.card: 'card',
-};
-
-RechargeResult _$RechargeResultFromJson(Map<String, dynamic> json) =>
-    RechargeResult(
-      success: json['success'] as bool,
-      message: json['message'] as String,
-      transactionId: json['transactionId'] as String?,
-      operatorTransactionId: json['operatorTransactionId'] as String?,
-      timestamp: DateTime.parse(json['timestamp'] as String),
-      status: $enumDecode(_$RechargeStatusEnumMap, json['status']),
-      request: json['request'] == null
-          ? null
-          : RechargeRequest.fromJson(json['request'] as Map<String, dynamic>),
-    );
-
-Map<String, dynamic> _$RechargeResultToJson(RechargeResult instance) =>
-    <String, dynamic>{
-      'success': instance.success,
-      'message': instance.message,
-      'transactionId': instance.transactionId,
-      'operatorTransactionId': instance.operatorTransactionId,
-      'timestamp': instance.timestamp.toIso8601String(),
-      'status': _$RechargeStatusEnumMap[instance.status]!,
-      'request': instance.request,
-    };
-
-const _$RechargeStatusEnumMap = {
-  RechargeStatus.pending: 'pending',
-  RechargeStatus.success: 'success',
-  RechargeStatus.failed: 'failed',
-  RechargeStatus.cancelled: 'cancelled',
-};
-
-Transaction _$TransactionFromJson(Map<String, dynamic> json) => Transaction(
-      id: json['id'] as String,
-      mobileNumber: json['mobileNumber'] as String,
-      operator: json['operator'] as String,
-      circle: json['circle'] as String,
-      amount: (json['amount'] as num).toInt(),
-      description: json['description'] as String,
-      timestamp: DateTime.parse(json['timestamp'] as String),
-      type: $enumDecode(_$TransactionTypeEnumMap, json['type']),
-      status: $enumDecode(_$TransactionStatusEnumMap, json['status']),
-      operatorTransactionId: json['operatorTransactionId'] as String?,
-      paymentMethod: $enumDecode(_$PaymentMethodEnumMap, json['paymentMethod']),
-    );
-
-Map<String, dynamic> _$TransactionToJson(Transaction instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'mobileNumber': instance.mobileNumber,
-      'operator': instance.operator,
       'circle': instance.circle,
-      'amount': instance.amount,
-      'description': instance.description,
-      'timestamp': instance.timestamp.toIso8601String(),
-      'type': _$TransactionTypeEnumMap[instance.type]!,
-      'status': _$TransactionStatusEnumMap[instance.status]!,
-      'operatorTransactionId': instance.operatorTransactionId,
-      'paymentMethod': _$PaymentMethodEnumMap[instance.paymentMethod]!,
+      'memberRequestTxnId': instance.memberRequestTxnId,
+      'groupId': instance.groupId,
     };
 
-const _$TransactionTypeEnumMap = {
-  TransactionType.recharge: 'recharge',
-  TransactionType.walletTopup: 'walletTopup',
-  TransactionType.refund: 'refund',
-};
-
-const _$TransactionStatusEnumMap = {
-  TransactionStatus.pending: 'pending',
-  TransactionStatus.success: 'success',
-  TransactionStatus.failed: 'failed',
-  TransactionStatus.cancelled: 'cancelled',
-  TransactionStatus.refunded: 'refunded',
-};
-
-PaymentResponse _$PaymentResponseFromJson(Map<String, dynamic> json) =>
-    PaymentResponse(
-      success: json['success'] as bool,
-      message: json['message'] as String,
-      paymentId: json['paymentId'] as String?,
-      orderId: json['orderId'] as String?,
-      amount: (json['amount'] as num).toInt(),
-      method: $enumDecode(_$PaymentMethodEnumMap, json['method']),
-      timestamp: DateTime.parse(json['timestamp'] as String),
-      additionalData: json['additionalData'] as Map<String, dynamic>?,
+RechargeResponse _$RechargeResponseFromJson(Map<String, dynamic> json) =>
+    RechargeResponse(
+      error: json['ERROR'] as String,
+      status: (json['STATUS'] as num).toInt(),
+      orderId: json['ORDERID'] as String,
+      opTransId: json['OPTRANSID'] as String?,
+      memberReqId: json['MEMBERREQID'] as String,
+      message: json['MESSAGE'] as String,
+      commission: json['COMMISSION'] as String?,
+      mobileNo: json['MOBILENO'] as String?,
+      amount: json['AMOUNT'] as String?,
+      lapuNo: json['LAPUNO'] as String?,
+      openingBal: json['OPNINGBAL'] as String?,
+      closingBal: json['CLOSINGBAL'] as String?,
     );
 
-Map<String, dynamic> _$PaymentResponseToJson(PaymentResponse instance) =>
+Map<String, dynamic> _$RechargeResponseToJson(RechargeResponse instance) =>
     <String, dynamic>{
-      'success': instance.success,
-      'message': instance.message,
-      'paymentId': instance.paymentId,
-      'orderId': instance.orderId,
-      'amount': instance.amount,
-      'method': _$PaymentMethodEnumMap[instance.method]!,
-      'timestamp': instance.timestamp.toIso8601String(),
-      'additionalData': instance.additionalData,
+      'ERROR': instance.error,
+      'STATUS': instance.status,
+      'ORDERID': instance.orderId,
+      'OPTRANSID': instance.opTransId,
+      'MEMBERREQID': instance.memberReqId,
+      'MESSAGE': instance.message,
+      'COMMISSION': instance.commission,
+      'MOBILENO': instance.mobileNo,
+      'AMOUNT': instance.amount,
+      'LAPUNO': instance.lapuNo,
+      'OPNINGBAL': instance.openingBal,
+      'CLOSINGBAL': instance.closingBal,
+    };
+
+StatusCheckResponse _$StatusCheckResponseFromJson(Map<String, dynamic> json) =>
+    StatusCheckResponse(
+      error: json['ERROR'] as String,
+      status: (json['STATUS'] as num).toInt(),
+      orderId: json['ORDERID'] as String,
+      opTransId: json['OPTRANSID'] as String,
+      memberReqId: json['MEMBERREQID'] as String,
+      message: json['MESSAGE'] as String,
+      commission: json['COMMISSION'] as String?,
+      mobileNo: json['MOBILENO'] as String,
+      amount: json['AMOUNT'] as String,
+      lapuNo: json['LAPUNO'] as String,
+      openingBal: json['OPNINGBAL'] as String,
+      closingBal: json['CLOSINGBAL'] as String,
+    );
+
+Map<String, dynamic> _$StatusCheckResponseToJson(
+        StatusCheckResponse instance) =>
+    <String, dynamic>{
+      'ERROR': instance.error,
+      'STATUS': instance.status,
+      'ORDERID': instance.orderId,
+      'OPTRANSID': instance.opTransId,
+      'MEMBERREQID': instance.memberReqId,
+      'MESSAGE': instance.message,
+      'COMMISSION': instance.commission,
+      'MOBILENO': instance.mobileNo,
+      'AMOUNT': instance.amount,
+      'LAPUNO': instance.lapuNo,
+      'OPNINGBAL': instance.openingBal,
+      'CLOSINGBAL': instance.closingBal,
+    };
+
+WalletBalanceResponse _$WalletBalanceResponseFromJson(
+        Map<String, dynamic> json) =>
+    WalletBalanceResponse(
+      errorCode: json['Errorcode'] as String,
+      status: (json['Status'] as num).toInt(),
+      message: json['Message'] as String,
+      buyerWalletBalance: (json['BuyerWalletBalance'] as num?)?.toDouble(),
+      sellerWalletBalance: (json['SellerWalletBalance'] as num?)?.toDouble(),
+    );
+
+Map<String, dynamic> _$WalletBalanceResponseToJson(
+        WalletBalanceResponse instance) =>
+    <String, dynamic>{
+      'Errorcode': instance.errorCode,
+      'Status': instance.status,
+      'Message': instance.message,
+      'BuyerWalletBalance': instance.buyerWalletBalance,
+      'SellerWalletBalance': instance.sellerWalletBalance,
+    };
+
+OperatorBalanceResponse _$OperatorBalanceResponseFromJson(
+        Map<String, dynamic> json) =>
+    OperatorBalanceResponse(
+      errorCode: json['Errorcode'] as String,
+      status: (json['Status'] as num).toInt(),
+      record: json['Record'] as Map<String, dynamic>?,
+      message: json['Message'] as String?,
+    );
+
+Map<String, dynamic> _$OperatorBalanceResponseToJson(
+        OperatorBalanceResponse instance) =>
+    <String, dynamic>{
+      'Errorcode': instance.errorCode,
+      'Status': instance.status,
+      'Record': instance.record,
+      'Message': instance.message,
+    };
+
+RechargeComplaintResponse _$RechargeComplaintResponseFromJson(
+        Map<String, dynamic> json) =>
+    RechargeComplaintResponse(
+      error: json['ERROR'] as String,
+      status: (json['STATUS'] as num).toInt(),
+      memberReqId: json['MEMBERREQID'] as String,
+      message: json['MESSAGE'] as String,
+    );
+
+Map<String, dynamic> _$RechargeComplaintResponseToJson(
+        RechargeComplaintResponse instance) =>
+    <String, dynamic>{
+      'ERROR': instance.error,
+      'STATUS': instance.status,
+      'MEMBERREQID': instance.memberReqId,
+      'MESSAGE': instance.message,
     };
