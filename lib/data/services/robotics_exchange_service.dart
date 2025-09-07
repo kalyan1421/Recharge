@@ -54,34 +54,82 @@ class RoboticsExchangeService {
       print('  Transaction ID: "$txnId"');
       print('  Amount: ₹$amount');
       print('  Group ID: ${groupId ?? "null"}');
-      print('  📊 Expected to use JIO LITE LAPU numbers: 8489377810, 9600888932, 9786468280, 9994400390');
-      print('  💰 Available JIO LITE balances: 1241.12 + 8.7 + 17.32 + 226.7 = ₹1493.84');
-      print('  Status: All JIO LITE LAPU numbers are ACTIVE ✅');
+      // Log operator-specific LAPU information
+      if (operatorCode == 'AT') {
+        print('  📊 Expected to use AIRTEL LAPU numbers: 8807999388 (Active), 9600807006 (Inactive), 8220060321 (Inactive)');
+        print('  💰 Available AIRTEL balances: 2509.17 (Active only)');
+        print('  Status: 1 Active (8807999388), 2 Inactive (9600807006, 8220060321) ⚠️');
+      } else if (operatorCode == 'JL') {
+        print('  📊 Expected to use JIO LITE LAPU numbers: 8489377810, 9786468280, 9994400390, 9600888932');
+        print('  💰 Available JIO LITE balances: 5.62 + 10.32 + 8.2 + 0.7 = ₹24.84');
+        print('  Status: 3 Active (8489377810, 9786468280, 9994400390), 1 Inactive (9600888932) ⚠️');
+      } else if (operatorCode == 'VI') {
+        print('  📊 Expected to use VODAFONEIDEA LAPU number: 8489770790');
+        print('  💰 Available VODAFONEIDEA balance: ₹5861.48');
+        print('  Status: 1 Active (8489770790) ✅');
+      } else if (operatorCode == 'BS') {
+        print('  📊 Expected to use BSNL LAPU numbers: 7598163554, 7598163734');
+        print('  💰 Available BSNL balances: 20.73 + 92.6 = ₹113.33');
+        print('  Status: 2 Active (7598163554, 7598163734) ✅');
+      }
       print('');
       
-      // Check if we have enough balance across all JIO LITE LAPU numbers
+      // Check balance for different operators
+      final rechargeAmount = double.tryParse(amount) ?? 0.0;
       if (operatorCode == 'JL') {
-        final totalJioLiteBalance = 1241.12 + 8.7 + 17.32 + 226.7;
-        final rechargeAmount = double.tryParse(amount) ?? 0.0;
+        final totalJioLiteBalance = 5.62 + 10.32 + 8.2 + 0.7; // Updated balances: 8489377810, 9786468280, 9994400390, 9600888932
         if (rechargeAmount > totalJioLiteBalance) {
           print('⚠️ Warning: Recharge amount (₹$amount) exceeds total JIO LITE balance (₹$totalJioLiteBalance)');
         }
+      } else if (operatorCode == 'AT') {
+        final totalAirtelBalance = 2509.17; // Only active LAPU: 8807999388
+        if (rechargeAmount > totalAirtelBalance) {
+          print('⚠️ Warning: Recharge amount (₹$amount) exceeds total AIRTEL balance (₹$totalAirtelBalance)');
+        }
+      } else if (operatorCode == 'VI') {
+        final totalViBalance = 5861.48; // Active LAPU: 8489770790
+        if (rechargeAmount > totalViBalance) {
+          print('⚠️ Warning: Recharge amount (₹$amount) exceeds total VODAFONEIDEA balance (₹$totalViBalance)');
+        }
+      } else if (operatorCode == 'BS') {
+        final totalBsnlBalance = 20.73 + 92.6; // Active LAPUs: 7598163554, 7598163734
+        if (rechargeAmount > totalBsnlBalance) {
+          print('⚠️ Warning: Recharge amount (₹$amount) exceeds total BSNL balance (₹$totalBsnlBalance)');
+        }
       }
 
-      // Build query parameters
+      // Ensure mobile number is 10 digits without country code
+      final cleanMobileNumber = mobileNumber.replaceAll(RegExp(r'[^\d]'), '');
+      final finalMobileNumber = cleanMobileNumber.length > 10 
+          ? cleanMobileNumber.substring(cleanMobileNumber.length - 10)
+          : cleanMobileNumber;
+      
+      // Build query parameters - ensure amount is integer format
       final queryParams = {
         'Apimember_id': _apiMemberId,
         'Api_password': _apiPassword,
-        'Mobile_no': mobileNumber,
+        'Mobile_no': finalMobileNumber,
         'Operator_code': operatorCode,
-        'Amount': amount,
+        'Amount': (double.tryParse(amount) ?? 0).toInt().toString(),
         'Member_request_txnid': txnId,
         'Circle': circleCode,
-        if (groupId != null) 'Group_Id': groupId,
+        // Note: Group_Id is optional and only added if provided
+        if (groupId != null && groupId.isNotEmpty) 'Group_Id': groupId,
       };
 
+      // Validate parameters before sending
+      if (finalMobileNumber.length != 10) {
+        throw Exception('Invalid mobile number format. Expected 10 digits, got: $finalMobileNumber');
+      }
+      
+      final amountInt = (double.tryParse(amount) ?? 0).toInt();
+      if (amountInt < 10 || amountInt > 25000) {
+        throw Exception('Invalid amount. Must be between 10 and 25000, got: $amountInt');
+      }
+      
       print('📤 Recharge Request - Endpoint: /GetMobileRecharge');
       print('📤 Recharge Request - Params: $queryParams');
+      print('📤 Validation: Mobile=$finalMobileNumber (${finalMobileNumber.length} digits), Amount=$amountInt, Operator=$operatorCode, Circle=$circleCode');
 
       final response = await _proxyService.getRoboticsExchange(
         '/GetMobileRecharge',
@@ -102,6 +150,58 @@ class RoboticsExchangeService {
         print('  Message: ${rechargeResponse.message}');
         print('  Order ID: ${rechargeResponse.orderId}');
         print('  Operator Transaction ID: ${rechargeResponse.opTransId}');
+        
+        // Enhanced handling for LAPU login error (Error Code 6)
+        if (rechargeResponse.error == '6') {
+          print('🚨 LAPU Login Issue Detected:');
+          print('  Original Message: ${rechargeResponse.message}');
+          print('  Operator Code: $operatorCode');
+          
+          String lapuNumbers = '';
+          String operatorName = '';
+          
+          switch (operatorCode) {
+            case 'AT':
+              lapuNumbers = '8807999388 (Active), 9600807006 (Inactive), 8220060321 (Inactive)';
+              operatorName = 'AIRTEL';
+              break;
+            case 'JL':
+              lapuNumbers = '8489377810, 9786468280, 9994400390 (Active), 9600888932 (Inactive)';
+              operatorName = 'JIO LITE';
+              break;
+            case 'VI':
+              lapuNumbers = '8489770790';
+              operatorName = 'VODAFONEIDEA';
+              break;
+            case 'BS':
+              lapuNumbers = '7598163554, 7598163734';
+              operatorName = 'BSNL';
+              break;
+            default:
+              lapuNumbers = 'Unknown operator';
+              operatorName = 'Unknown';
+          }
+          
+          print('  Affected $operatorName LAPU Numbers: $lapuNumbers');
+          print('  Action Required: Contact Robotics Exchange support to reactivate $operatorName LAPU numbers');
+          print('  📞 Support Contact: Contact support to login $operatorName LAPU numbers for operator code $operatorCode');
+          
+          // Create enhanced error response
+          return RechargeResponse(
+            error: '6',
+            status: 3,
+            orderId: rechargeResponse.orderId,
+            memberReqId: rechargeResponse.memberReqId,
+            message: '$operatorName LAPU numbers need reactivation. Please contact support to login LAPU numbers: $lapuNumbers for operator code $operatorCode.',
+            opTransId: rechargeResponse.opTransId,
+            commission: rechargeResponse.commission,
+            mobileNo: rechargeResponse.mobileNo,
+            amount: rechargeResponse.amount,
+            lapuNo: rechargeResponse.lapuNo,
+            openingBal: rechargeResponse.openingBal,
+            closingBal: rechargeResponse.closingBal,
+          );
+        }
         
         return rechargeResponse;
       } else {
@@ -490,7 +590,7 @@ class RoboticsExchangeService {
             commission: null,
             mobileNo: mobileNumber,
             amount: amount,
-            lapuNo: '0681274064',
+            lapuNo: '8489377810', // Primary active JIO LITE LAPU
             openingBal: null,
             closingBal: null,
           );
@@ -580,6 +680,40 @@ class RoboticsExchangeService {
     } catch (e) {
       print('Error checking operator balance: $e');
       return false;
+    }
+  }
+
+  /// Process recharge with plan details
+  Future<Map<String, dynamic>> processRecharge({
+    required String mobileNumber,
+    required double amount,
+    required String operator,
+    required dynamic planDetails,
+  }) async {
+    try {
+      // Use the existing performRecharge method with proper operator mapping
+      final response = await performRecharge(
+        mobileNumber: mobileNumber,
+        operatorName: operator, // Pass the operator name directly
+        circleName: 'All India', // Default circle for now
+        amount: amount.toString(),
+      );
+
+      if (response.isSuccess) {
+        return {
+          'success': true,
+          'transactionId': response.opTransId ?? response.orderId ?? _generateTransactionId(),
+          'amount': amount,
+          'mobileNumber': mobileNumber,
+          'operator': operator,
+          'timestamp': DateTime.now().toIso8601String(),
+          'planDetails': planDetails,
+        };
+      } else {
+        throw Exception(response.message ?? 'Recharge failed');
+      }
+    } catch (e) {
+      throw Exception('Recharge processing failed: ${e.toString()}');
     }
   }
 } 
