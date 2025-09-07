@@ -50,10 +50,17 @@ void main() {
       expect(OperatorMapping.getCircleCode('AP'), '49');
     });
 
+    test('should handle All India circle', () {
+      expect(OperatorMapping.getCircleCode('All India'), '50');
+      expect(OperatorMapping.getCircleCode('ALL INDIA'), '50');
+      expect(OperatorMapping.getCircleCode('All'), '50');
+      expect(OperatorMapping.getCircleCode('ALL'), '50');
+    });
+
     test('should handle unknown circles', () {
-      // Should default to Delhi
-      expect(OperatorMapping.getCircleCode('UNKNOWN_CIRCLE'), '10');
-      expect(OperatorMapping.getCircleCode(''), '10');
+      // Should default to All India
+      expect(OperatorMapping.getCircleCode('UNKNOWN_CIRCLE'), '50');
+      expect(OperatorMapping.getCircleCode(''), '50');
     });
   });
 
